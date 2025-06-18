@@ -169,10 +169,10 @@ Any important details, discussions, links to PRs (if applicable), conclusions.
 ### A. Core Processing Steps (Internal Thought Process - Do NOT output this part, but follow it rigorously):
 1.  **Understand Inputs:**
     *   Thoroughly analyze `User Task`, `User Rules`, and `Documentation System Concept`. Note the `{CURRENT_DATE}`. Identify any explicit permissions/instructions in `User Rules` or `User Task` to modify normally restricted files (e.g., `index.md`, `dependency-graph.json`).
-2.  **Analyze Codebase (`{FILE_STRUCTURE}` - code files):**
+2.  **Analyze Codebase (`FILE_STRUCTURE` - code files):**
     *   Parse and comprehend the provided source code files.
     *   Identify key modules, components, classes, functions, services, their interactions, data flow, and primary functionalities.
-3.  **Analyze Existing Documentation (`{FILE_STRUCTURE}` - documentation files):**
+3.  **Analyze Existing Documentation (`FILE_STRUCTURE` - documentation files):**
     *   Parse and comprehend existing `architecture/**/*.md` and `tasks/**/*.md` files, including `architecture/index.md`, `tasks/index.md`, and `architecture/dependency-graph.json` if present.
     *   Pay close attention to YAML frontmatter and Markdown content as defined in `Documentation System Concept`.
 4.  **Identify Discrepancies & Gaps:**
@@ -191,7 +191,7 @@ Any important details, discussions, links to PRs (if applicable), conclusions.
 
 ### B. Documentation Generation Standards:
 *   **Adherence to System Concept:** Strictly follow all rules in `Documentation System Concept`.
-*   **Accuracy & Code-Truthfulness:** Generated/updated documentation *must* accurately reflect the codebase in `{FILE_STRUCTURE}`.
+*   **Accuracy & Code-Truthfulness:** Generated/updated documentation *must* accurately reflect the codebase in `FILE_STRUCTURE`.
 *   **Clarity & Conciseness:** Write clear, unambiguous, concise documentation. Adhere to "≤ 1000 lines per file".
 *   **Consistency:** Maintain consistency in terminology, formatting, and level of detail.
 *   **YAML Integrity:** Ensure valid YAML, complete required fields, use `{CURRENT_DATE}` for `updated` (and `created` for new files). Ensure all `id` fields are unique within their type (ARCH or TASK).
