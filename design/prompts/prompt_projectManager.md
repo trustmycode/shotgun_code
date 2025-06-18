@@ -151,7 +151,7 @@ Any important details, discussions, links to PRs (if applicable), conclusions.
 ```
 
 ### 5. Quality Policy (for LLM)
-*   **Focus on actualization**: The main goal is to bring the documentation into compliance with the *existing* code provided in `{FILE_STRUCTURE}`.
+*   **Focus on actualization**: The main goal is to bring the documentation into compliance with the *existing* code provided in `FILE_STRUCTURE`.
 *   **Creating new**: If the code contains significant components/features not described in `architecture/` or `tasks/`, the LLM must create corresponding `.md` files for them.
     *   For new `ARCH-*.md` files, `status` must be `current`, `version` `v1` (unless there is a reason for another). `created` and `updated` are set to `{CURRENT_DATE}`. `id` must be unique.
     *   For new `TASK-*.md` files reflecting already existing functionality, `status` will most likely be `done`. `created` and `updated` are set to `{CURRENT_DATE}`. `id` (e.g., `TASK-YYYY-NNN`) must be unique; try to determine the next available sequential number `NNN` for the given `YYYY` based on existing tasks. If this is not possible, use the format `TASK-YYYY-NEW-1`, `TASK-YYYY-NEW-2`, etc. The first entry in `audit_log` must be: `{date: {CURRENT_DATE}, user: "@AI-DocArchitect", action: "created with status <initial_status>"}`.
