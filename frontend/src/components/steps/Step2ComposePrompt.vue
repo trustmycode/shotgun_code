@@ -14,7 +14,7 @@
     />
 
     <div class="flex-grow flex flex-row space-x-4 overflow-hidden">
-      <div class="w-1/2 flex flex-col space-y-3 overflow-y-auto p-2 border border-gray-200 rounded-md bg-gray-50">
+      <div :class="['flex flex-col space-y-3 overflow-y-auto p-2 border border-gray-200 rounded-md bg-gray-50', isPromptVisible ? 'w-1/2' : 'w-full']">
         <div>
           <label for="user-task-ai" class="block text-sm font-medium text-gray-700 mb-1">Your task for AI:</label>
           <textarea
@@ -24,6 +24,25 @@
             class="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 text-sm"
             placeholder="Describe what the AI should do..."
           ></textarea>
+        </div>
+        <div class="flex items-center space-x-3 pt-2">
+          <select
+            v-model="selectedPromptTemplateKey"
+            class="p-1 border border-gray-300 rounded-md text-sm focus:ring-blue-500 focus:border-blue-500"
+            :disabled="isLoadingFinalPrompt"
+            title="Select prompt template"
+          >
+            <option v-for="(template, key) in promptTemplates" :key="key" :value="key">
+              {{ template.name }}
+            </option>
+          </select>
+          <button
+            @click="copyFinalPromptToClipboard"
+            :disabled="!props.finalPrompt || isLoadingFinalPrompt"
+            class="px-3 py-1 bg-blue-500 text-white text-sm font-semibold rounded-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 disabled:bg-gray-300"
+          >
+            {{ copyButtonText }}
+          </button>
         </div>
 
         <div>
@@ -55,36 +74,14 @@
         </div>
       </div>
 
-      <div class="w-1/2 flex flex-col overflow-y-auto p-2 border border-gray-200 rounded-md bg-white">
+      <div v-if="isPromptVisible" class="w-1/2 flex flex-col overflow-y-auto p-2 border border-gray-200 rounded-md bg-white">
         <div class="flex justify-between items-center mb-2">
-          <div class="flex items-center space-x-2">
-            <h3 class="text-md font-medium text-gray-700">Prompt:</h3>
-            <select
-              v-model="selectedPromptTemplateKey"
-              class="ml-2 p-1 border border-gray-300 rounded-md text-xs focus:ring-blue-500 focus:border-blue-500"
-              :disabled="isLoadingFinalPrompt"
-              title="Select prompt template"
-            >
-              <option v-for="(template, key) in promptTemplates" :key="key" :value="key">
-                {{ template.name }}
-              </option>
-            </select>
-          </div>
+          <h3 class="text-md font-medium text-gray-700">Final Prompt:</h3>
           <div class="flex items-center space-x-3">
-            <span
-              v-show="!isLoadingFinalPrompt"
-              :class="['text-xs font-medium', charCountColorClass]"
-              :title="tooltipText"
-            >
+            <span v-show="!isLoadingFinalPrompt" :class="['text-xs font-medium', charCountColorClass]" :title="tooltipText">
               ~{{ approximateTokens }} tokens
             </span>
-            <button
-              @click="copyFinalPromptToClipboard"
-              :disabled="!props.finalPrompt || isLoadingFinalPrompt"
-              class="px-3 py-1 bg-blue-500 text-white text-xs font-semibold rounded-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 disabled:bg-gray-300"
-            >
-              {{ copyButtonText }}
-            </button>
+            <button @click="isPromptVisible = false" class="px-3 py-1 bg-gray-200 text-gray-700 text-xs font-semibold rounded-md hover:bg-gray-300">Hide</button>
           </div>
         </div>
 
@@ -105,6 +102,11 @@
          <p class="text-xs text-gray-500 mt-1">
             The prompt updates automatically. Manual changes to this field may be overwritten when source data (task, rules, file list) is updated.
         </p>
+      </div>
+      <div v-else class="flex justify-center items-center p-2">
+        <button @click="isPromptVisible = true" class="px-4 py-2 bg-gray-200 text-gray-800 font-semibold rounded-md hover:bg-gray-300">
+          Show Final Prompt
+        </button>
       </div>
     </div>
   </div>
@@ -153,6 +155,8 @@ const promptTemplates = {
   findBug: { name: 'Find Bug', content: findBugTemplateContentFromFile },
   projectManager: { name: 'Project: Update Tasks', content: projectManagerTemplateContentFromFile },
 };
+
+const isPromptVisible = ref(true);
 
 const selectedPromptTemplateKey = ref('dev'); // Default template
 
