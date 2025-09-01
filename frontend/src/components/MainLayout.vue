@@ -10,12 +10,14 @@
         :use-gitignore="useGitignore"
         :use-custom-ignore="useCustomIgnore"
         :loading-error="loadingError"
+        :is-loading-tree="isFileTreeLoading"
         @navigate="navigateToStep"
         @select-folder="selectProjectFolderHandler"
         @toggle-gitignore="toggleGitignoreHandler"
         @toggle-custom-ignore="toggleCustomIgnoreHandler"
         @toggle-exclude="toggleExcludeNode"
         @custom-rules-updated="handleCustomRulesUpdated"
+        @refresh-file-tree="handleRefreshFileTree"
         @add-log="({message, type}) => addLog(message, type)" />
       <CentralPanel :current-step="currentStep" 
                     :shotgun-prompt-context="shotgunPromptContext"
@@ -146,6 +148,13 @@ async function selectProjectFolderHandler() {
     loadingError.value = errorMsg;
     addLog(errorMsg, 'error', 'bottom');
     isFileTreeLoading.value = false;
+  }
+}
+
+function handleRefreshFileTree() {
+  if (projectRoot.value && !isFileTreeLoading.value) {
+    addLog("Manual file tree refresh triggered.", 'info');
+    loadFileTree(projectRoot.value);
   }
 }
 

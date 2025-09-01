@@ -40,7 +40,19 @@
         </label>
       </div>
 
-      <h2 class="text-lg font-semibold text-gray-700 mb-2">Project Files</h2>
+      <div class="flex items-center justify-between mb-2">
+        <h2 class="text-lg font-semibold text-gray-700">Project Files</h2>
+        <button 
+          v-if="projectRoot"
+          @click="$emit('refresh-file-tree')"
+          :disabled="isLoadingTree"
+          title="Refresh file list"
+          class="p-1 rounded-md hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <!-- Иконка обновления, можно заменить на SVG -->
+          <span :class="{'animate-spin': isLoadingTree}">🔄</span>
+        </button>
+      </div>
       <div class="border border-gray-300 rounded min-h-[200px] bg-white text-sm overflow-auto max-h-[50vh]">
         <FileTree 
             v-if="fileTreeNodes && fileTreeNodes.length" 
@@ -99,6 +111,7 @@ const props = defineProps({
   useGitignore: { type: Boolean, default: true },
   useCustomIgnore: { type: Boolean, default: false },
   loadingError: { type: String, default: '' },
+  isLoadingTree: { type: Boolean, default: false },
 });
 
 const emit = defineEmits(['navigate', 'select-folder', 'toggle-gitignore', 'toggle-custom-ignore', 'toggle-exclude', 'custom-rules-updated', 'add-log']);
