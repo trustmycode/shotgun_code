@@ -1,17 +1,18 @@
 ---
 id: TASK-2025-005
 title: "Задача 1.1: Управление API ключом"
-status: backlog
+status: done
 priority: high
 type: feature
 estimate: 1h
 assignee: '@unassigned'
 created: 2025-09-03
-updated: 2025-09-03
+updated: 2025-09-04
 parents: [TASK-2025-004]
 arch_refs: [ARCH-BACKEND-GEMINI-PROXY]
 audit_log:
   - {date: 2025-09-03, user: "@AI-DocArchitect", action: "created with status backlog"}
+  - {date: 2025-09-04, user: "@Robotic-SSE", action: "implemented SaveApiKey and LoadApiKey; status changed to done"}
 ---
 ## Описание
 Реализовать безопасное сохранение и загрузку Google AI API ключа пользователя. Ключ должен храниться в файле конфигурации в домашней директории пользователя и не должен передаваться на фронтенд.

@@ -34,6 +34,7 @@ index 81b212c..5718697 100644
  // SetUseGitignore updates the app's setting for using .gitignore and informs the watcher.
  func (a *App) SetUseGitignore(enabled bool) error {
  	a.useGitignore = enabled
+
 diff --git a/frontend/wailsjs/go/main/App.d.ts b/frontend/wailsjs/go/main/App.d.ts
 index 5410196..4198305 100644
 --- a/frontend/wailsjs/go/main/App.d.ts
@@ -53,6 +54,7 @@ index 5410196..4198305 100644
  export function SetCustomIgnoreRules(arg1:string):Promise<void>;
  
  export function SetCustomPromptRules(arg1:string):Promise<void>;
+
 diff --git a/frontend/wailsjs/go/main/App.js b/frontend/wailsjs/go/main/App.js
 index 725807e..526027c 100644
 --- a/frontend/wailsjs/go/main/App.js
@@ -78,6 +80,7 @@ index 725807e..526027c 100644
  }
  
  export function SetCustomIgnoreRules(arg1) {
+
 diff --git a/tasks/2025-Q3/TASK-2025-005-backend-api-key.md b/tasks/2025-Q3/TASK-2025-005-backend-api-key.md
 index 109968a..7800057 100644
 --- a/tasks/2025-Q3/TASK-2025-005-backend-api-key.md

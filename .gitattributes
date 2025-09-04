@@ -1,0 +1,13 @@
+* text=auto eol=lf
+
+# (опционально) файлы, где нужен CRLF
+*.bat  eol=crlf
+*.cmd  eol=crlf
+*.ps1  eol=crlf
+
+# (не обязательно, но можно явно пометить бинарники)
+*.png  binary
+*.jpg  binary
+*.gif  binary
+*.pdf  binary
+*.ico  binary
