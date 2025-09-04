@@ -31,6 +31,7 @@ const defaultCustomPromptRulesContent = "no additional rules"
 type AppSettings struct {
 	CustomIgnoreRules string `json:"customIgnoreRules"`
 	CustomPromptRules string `json:"customPromptRules"`
+	ApiKey            string `json:"apiKey,omitempty"`
 }
 
 type App struct {
@@ -983,6 +984,23 @@ func (a *App) SetCustomPromptRules(rules string) error {
 	return nil
 }
 
+// SaveApiKey saves the Google AI API key to the settings file.
+func (a *App) SaveApiKey(key string) error {
+	a.settings.ApiKey = key
+	err := a.saveSettings()
+	if err != nil {
+		return fmt.Errorf("failed to save API key: %w", err)
+	}
+	runtime.LogInfo(a.ctx, "API Key saved successfully.")
+	return nil
+}
+
+// LoadApiKey loads the Google AI API key from the settings.
+func (a *App) LoadApiKey() string {
+	// Settings are loaded at startup. If the key is empty, it's either not set or couldn't be loaded.
+	return a.settings.ApiKey
+}
+
 // SetUseGitignore updates the app's setting for using .gitignore and informs the watcher.
 func (a *App) SetUseGitignore(enabled bool) error {
 	a.useGitignore = enabled
@@ -1003,4 +1021,32 @@ func (a *App) SetUseCustomIgnore(enabled bool) error {
 		return a.fileWatcher.RefreshIgnoresAndRescan()
 	}
 	return nil
+}
+
+func (a *App) AssembleFinalPrompt(templateContent string, userTask string, rulesContent string, fileContext string) (string, error) {
+	runtime.LogDebugf(a.ctx, "AssembleFinalPrompt called. Task len: %d, Rules len: %d, Context len: %d", len(userTask), len(rulesContent), len(fileContext))
+
+	if userTask == "" {
+		userTask = "No task provided by the user."
+	}
+	if fileContext == "" {
+		fileContext = "No file structure context provided."
+	}
+
+	// Получаем текущую дату в формате YYYY-MM-DD
+	currentDate := time.Now().Format("2006-01-02")
+
+	// Используем strings.NewReplacer для эффективной замены всех плейсхолдеров за один проход
+	replacer := strings.NewReplacer(
+		"{TASK}", userTask,
+		"{RULES}", rulesContent,
+		"{FILE_STRUCTURE}", fileContext,
+		"2025-09-04", currentDate, // Также заменяем дату
+	)
+
+	// Для очень больших строк использование strings.Builder может быть немного эффективнее,
+	// но NewReplacer уже достаточно оптимизирован.
+	finalPrompt := replacer.Replace(templateContent)
+
+	return finalPrompt, nil
 }

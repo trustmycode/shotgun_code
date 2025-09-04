@@ -6,7 +6,7 @@
   "frontend:build": "npm run build",
   "frontend:dev:watcher": "npm run dev",
   "frontend:dev:serverUrl": "auto",
-  "icon": "appicon.png",
+  "icon": "appicon.ico",
   "author": {
     "name": "Gleb Curly",
     "email": "glebkudr@gmail.com"

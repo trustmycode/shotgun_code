@@ -114,8 +114,7 @@
 
 <script setup>
 import { ref, watch, onMounted, computed } from 'vue';
-import { ClipboardSetText as WailsClipboardSetText } from '../../../wailsjs/runtime/runtime';
-import { GetCustomPromptRules, SetCustomPromptRules } from '../../../wailsjs/go/main/App';
+import { GetCustomPromptRules, SetCustomPromptRules, AssembleFinalPrompt } from '../../../wailsjs/go/main/App'; // <--- 1. ИМПОРТИРУЕМ НОВУЮ ФУНКЦИЮ
 import { LogInfo as LogInfoRuntime, LogError as LogErrorRuntime } from '../../../wailsjs/runtime/runtime';
 import CustomRulesModal from '../CustomRulesModal.vue';
 
@@ -157,58 +156,112 @@ const promptTemplates = {
 };
 
 const isPromptVisible = ref(true);
-
-const selectedPromptTemplateKey = ref('dev'); // Default template
-
+const selectedPromptTemplateKey = ref('dev');
 const isLoadingFinalPrompt = ref(false);
 const copyButtonText = ref('Copy All');
-
-let finalPromptDebounceTimer = null;
 let userTaskInputDebounceTimer = null;
-
-// Modal state for prompt rules
 const isPromptRulesModalVisible = ref(false);
 const currentPromptRulesForModal = ref('');
-
 const isFirstMount = ref(true);
-
 const localUserTask = ref(props.userTask);
-
-// Character count and related computed properties
-const charCount = computed(() => {
-  return (props.finalPrompt || '').length;
-});
-
-const approximateTokens = computed(() => {
-  const tokens = Math.round(charCount.value / 3);
-  return tokens.toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ");
-});
-
-const charCountColorClass = computed(() => {
-  const count = charCount.value;
-  if (count < 1000000) {
-    return 'text-green-600';
-  } else if (count <= 4000000) {
-    return 'text-yellow-500'; // Using 500 for better visibility on white bg
-  } else {
-    return 'text-red-600';
-  }
-});
-
-const tooltipText = computed(() => {
-  if (isLoadingFinalPrompt.value) return 'Calculating...';
-  
-  const count = charCount.value;
-  const tokens = Math.round(count / 3);
-  return `Your text contains ${count} symbols which is roughly equivalent to ${tokens} tokens`;
-});
-
 const DEFAULT_RULES = `no additional rules`;
 
+const charCount = computed(() => (props.finalPrompt || '').length);
+const approximateTokens = computed(() => Math.round(charCount.value / 3).toString().replace(/\B(?=(\d{3})+(?!\d))/g, " "));
+const charCountColorClass = computed(() => {
+  const count = charCount.value;
+  if (count < 1000000) return 'text-green-600';
+  if (count <= 4000000) return 'text-yellow-500';
+  return 'text-red-600';
+});
+const tooltipText = computed(() => {
+  if (isLoadingFinalPrompt.value) return 'Calculating...';
+  const tokens = Math.round(charCount.value / 3);
+  return `Your text contains ${charCount.value} symbols which is roughly equivalent to ${tokens} tokens`;
+});
+
+
+// Функция для обновления предпросмотра, теперь вызывает Go
+async function updateFinalPrompt() {
+  isLoadingFinalPrompt.value = true;
+  await new Promise(resolve => setTimeout(resolve, 50));
+  
+  try {
+    const populatedPrompt = await AssembleFinalPrompt(
+      promptTemplates[selectedPromptTemplateKey.value].content,
+      localUserTask.value,
+      props.rulesContent,
+      props.fileListContext
+    );
+    emit('update:finalPrompt', populatedPrompt);
+  } catch (error) {
+    console.error("Error assembling prompt via backend:", error);
+    LogErrorRuntime(`Error assembling prompt via backend: ${error.message || error}`);
+    emit('update:finalPrompt', `Error: Failed to generate prompt. See console for details.`);
+  } finally {
+    isLoadingFinalPrompt.value = false;
+  }
+}
+
+// Функция копирования, также вызывает Go для получения самой свежей версии
+async function copyFinalPromptToClipboard() {
+  isLoadingFinalPrompt.value = true; // Показываем индикатор, т.к. может занять время
+  let promptToCopy = '';
+  try {
+    promptToCopy = await AssembleFinalPrompt(
+      promptTemplates[selectedPromptTemplateKey.value].content,
+      localUserTask.value,
+      props.rulesContent,
+      props.fileListContext
+    );
+  } catch (error) {
+    console.error("Error assembling prompt for copy:", error);
+    LogErrorRuntime(`Error assembling prompt for copy: ${error.message || error}`);
+    copyButtonText.value = 'Failed!';
+    setTimeout(() => { copyButtonText.value = 'Copy All'; }, 2000);
+    isLoadingFinalPrompt.value = false;
+    return;
+  }
+  
+  isLoadingFinalPrompt.value = false;
+  if (!promptToCopy) return;
+
+  try {
+    await navigator.clipboard.writeText(promptToCopy);
+    copyButtonText.value = 'Copied!';
+    setTimeout(() => { copyButtonText.value = 'Copy All'; }, 2000);
+  } catch (err) {
+    console.error('Failed to copy final prompt: ', err);
+    copyButtonText.value = 'Failed!';
+    setTimeout(() => { copyButtonText.value = 'Copy All'; }, 2000);
+  }
+}
+
+// --- Наблюдатели (Watchers) ---
+// Логика наблюдателей остается такой же, как в предыдущем предложении по исправлению.
+// Это сохраняет производительность, так как `updateFinalPrompt` не вызывается при каждом нажатии клавиши.
+
+watch(() => props.userTask, (newValue) => {
+  if (newValue !== localUserTask.value) { localUserTask.value = newValue; }
+});
+
+watch(localUserTask, (currentValue) => {
+  clearTimeout(userTaskInputDebounceTimer);
+  userTaskInputDebounceTimer = setTimeout(() => {
+    if (currentValue !== props.userTask) {
+      emit('update:userTask', currentValue);
+    }
+  }, 300);
+});
+
+watch([() => props.rulesContent, () => props.fileListContext, selectedPromptTemplateKey], () => {
+  updateFinalPrompt();
+}, { immediate: true });
+
+// --- Логика модального окна и монтирования (без изменений) ---
 onMounted(async () => {
   try {
     localUserTask.value = props.userTask;
-    // Load rules from the backend only on the first mount
     if (isFirstMount.value) {
       const fetchedRules = await GetCustomPromptRules();
       if (!props.rulesContent) {
@@ -224,84 +277,7 @@ onMounted(async () => {
     }
     isFirstMount.value = false;
   }
-
-  if (!props.finalPrompt && (props.fileListContext || props.userTask)) {
-    debouncedUpdateFinalPrompt();
-  }
 });
-
-async function updateFinalPrompt() {
-  isLoadingFinalPrompt.value = true;
-  await new Promise(resolve => setTimeout(resolve, 100));
-
-  const currentTemplateContent = promptTemplates[selectedPromptTemplateKey.value].content;
-  let populatedPrompt = currentTemplateContent;
-  populatedPrompt = populatedPrompt.replace('{TASK}', props.userTask || "No task provided by the user.");
-  populatedPrompt = populatedPrompt.replace('{RULES}', props.rulesContent);
-  populatedPrompt = populatedPrompt.replace('{FILE_STRUCTURE}', props.fileListContext || "No file structure context provided.");
-
-  // Insert current date in YYYY-MM-DD format
-  const now = new Date();
-  const yyyy = now.getFullYear();
-  const mm = String(now.getMonth() + 1).padStart(2, '0');
-  const dd = String(now.getDate()).padStart(2, '0');
-  const currentDate = `${yyyy}-${mm}-${dd}`;
-  populatedPrompt = populatedPrompt.replaceAll('{CURRENT_DATE}', currentDate);
-
-  emit('update:finalPrompt', populatedPrompt);
-  isLoadingFinalPrompt.value = false;
-}
-
-function debouncedUpdateFinalPrompt() {
-  clearTimeout(finalPromptDebounceTimer);
-  finalPromptDebounceTimer = setTimeout(() => {
-    updateFinalPrompt();
-  }, 750);
-}
-
-watch(() => props.userTask, (newValue) => {
-  if (newValue !== localUserTask.value) {
-    localUserTask.value = newValue;
-  }
-});
-
-watch(localUserTask, (currentValue) => {
-  clearTimeout(userTaskInputDebounceTimer);
-  userTaskInputDebounceTimer = setTimeout(() => {
-    if (currentValue !== props.userTask) {
-      emit('update:userTask', currentValue);
-    }
-  }, 300);
-});
-
-watch([() => props.userTask, () => props.rulesContent, () => props.fileListContext, selectedPromptTemplateKey], () => {
-  debouncedUpdateFinalPrompt();
-}, { deep: true });
-
-watch(selectedPromptTemplateKey, () => {
-  LogInfoRuntime(`Prompt template changed to: ${promptTemplates[selectedPromptTemplateKey.value].name}. Updating final prompt.`);
-  debouncedUpdateFinalPrompt();
-});
-
-async function copyFinalPromptToClipboard() {
-  if (!props.finalPrompt) return;
-  try {
-    await navigator.clipboard.writeText(props.finalPrompt);
-    copyButtonText.value = 'Copied!';
-    setTimeout(() => {
-      copyButtonText.value = 'Copy All';
-    }, 2000);
-  } catch (err) {
-    console.error('Failed to copy final prompt: ', err);
-    if (props.platform === 'darwin' && err) {
-      console.error('darvin ClipboardSetText failed for final prompt:', err);
-    }
-    copyButtonText.value = 'Failed!';
-    setTimeout(() => {
-      copyButtonText.value = 'Copy All';
-    }, 2000);
-  }
-}
 
 async function openPromptRulesModal() {
   try {

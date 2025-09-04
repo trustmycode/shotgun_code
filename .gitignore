@@ -68,6 +68,6 @@ Show-DirectoryTree.ps1
 # assets_large/ 
 
 # Locale files
-/tasks/*
-/architecture/*
+# /tasks/*
+# /architecture/*
 git_diff.txt
