@@ -1,166 +1,161 @@
 <template>
   <div class="p-6 flex flex-col h-full">
-    <h2 class="text-xl font-semibold text-gray-800 mb-4">Step 4: Apply Patch</h2>
+    <h2 class="text-xl font-semibold text-gray-800 mb-4">Step 4: Execute with Cursor CLI</h2>
     
-    <div v-if="isLoading" class="flex-grow flex justify-center items-center">
-      <p class="text-gray-600">Loading split diffs...</p>
+    <!-- Checking State -->
+    <div v-if="cliStatus === 'checking'" class="flex-grow flex justify-center items-center">
+      <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+      <p class="text-gray-600 ml-3">Checking for Cursor CLI...</p>
     </div>
     
-    <div v-else-if="splitDiffs && splitDiffs.length > 0" class="flex-grow overflow-y-auto space-y-6">
-      <p class="text-gray-600 mb-2 text-xs">
-        The original diff has been split into {{ splitDiffs.length }} smaller diffs.
-        Copy each part and apply it using your preferred tool. With an LLM, just tell it to <strong>apply the diff</strong>.
-      </p>
-      <div v-for="(diff, index) in splitDiffs" :key="index" :class="['border border-gray-300 rounded-md p-4', isCopied[index] ? 'bg-green-50' : 'bg-gray-50', 'shadow-sm']">
-        <div class="flex justify-between items-center">
-          <h3 class="text-lg font-medium text-gray-700">Split {{ index + 1 }} of {{ splitDiffs.length }}</h3>
-          <div class="flex items-center space-x-2">
-            <!-- SOON: add a feature to apply the diff automatically -->
-            <!-- <button
-              class="px-3 py-1 bg-gray-100 text-gray-300 text-xs font-semibold rounded-md focus:outline-none focus:ring-2 focus:ring-gray-400"
-              disabled
-            >
-              Apply Diff
-            </button> -->
-            <button
-              @click="copyDiffToClipboard(diff, index)"
-              class="px-3 py-1 bg-gray-200 text-gray-700 text-xs font-semibold rounded-md hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-400"
-            >
-              {{ copyButtonTexts[index] || 'Copy' }}
-            </button>
-          </div>
-        </div>
-        <div class="text-gray-600 text-xs mb-2">
-           <!-- the lines metric will be orange if it's greater than props.splitLineLimit + 5%, red if it's greater than props.splitLineLimit + 20%, green if it's less than props.splitLineLimit + 5% -->
-            <!-- calculate this in the vue script below, to simplify the code -->
-          <div class="inline-block px-2 py-1 rounded-full text-xs" :class="getLineMetricClass(diff.split('\n').length)">
-            {{ diff.split('\n').length }} lines
-          </div>
-          <div class="inline-block px-2 py-1 bg-blue-100 rounded-full text-xs ml-2">
-            {{ (diff.match(/^diff --git/gm) || []).length }} file{{ (diff.match(/^diff --git/gm) || []).length === 1 ? '' : 's' }}
-          </div>
-          <div class="inline-block px-2 py-1 bg-blue-100 rounded-full text-xs ml-2">
-            {{ (diff.match(/^@@ .* @@/gm) || []).length }} hunk{{ (diff.match(/^@@ .* @@/gm) || []).length === 1 ? '' : 's' }}
-          </div>
-        </div>
+    <!-- Error State -->
+    <div v-else-if="cliStatus === 'error'" class="flex-grow flex justify-center items-center text-center">
+      <div class="p-4 border border-red-300 bg-red-50 rounded-md">
+        <h3 class="text-lg font-semibold text-red-700 mb-2">An Error Occurred</h3>
+        <p v-if="isWslError" class="text-red-600">
+          Windows Subsystem for Linux (WSL) not detected or not running.
+          <br>Please install WSL and ensure it's operational to use the Cursor CLI integration.
+        </p>
+        <pre v-else class="text-red-600 text-xs whitespace-pre-wrap">{{ cliError }}</pre>
+        <button @click="checkCli" class="mt-4 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">Retry Check</button>
+      </div>
+    </div>
+    
+    <!-- Not Installed State -->
+    <div v-else-if="cliStatus === 'not_installed'" class="flex-grow flex flex-col justify-center items-center text-center">
+      <div class="p-6 border border-gray-300 bg-gray-50 rounded-lg shadow-sm max-w-md">
+        <h3 class="text-lg font-semibold text-gray-800 mb-2">Cursor CLI Not Found</h3>
+        <p class="text-gray-600 mb-4 text-sm">
+          To execute the prompt automatically, the Cursor CLI tool (`cursor-agent`) is required.
+        </p>
+        <button
+          @click="installCli"
+          :disabled="isInstalling"
+          class="px-6 py-2 bg-green-600 text-white font-semibold rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-opacity-50 disabled:bg-gray-400 flex items-center"
+        >
+          <div v-if="isInstalling" class="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+          {{ isInstalling ? 'Installing...' : 'Install Cursor CLI' }}
+        </button>
+        <p v-if="installationLog" class="text-xs text-gray-500 mt-3 whitespace-pre-wrap bg-white p-2 border rounded max-h-40 overflow-auto">{{ installationLog }}</p>
+      </div>
+    </div>
+    
+    <!-- Installed State -->
+    <div v-else-if="cliStatus === 'installed'" class="flex-grow flex flex-col space-y-4">
+      <div>
+        <h3 class="text-lg font-medium text-gray-800">Cursor CLI is Ready</h3>
+        <p class="text-sm text-green-600 font-semibold">✓ Installed at: <code class="bg-gray-100 p-1 rounded text-xs">{{ cliPath }}</code></p>
+      </div>
+      <div class="flex-grow flex flex-col">
+        <label for="cli-output" class="block text-sm font-medium text-gray-700 mb-1">Execution Output:</label>
         <textarea
-          :value="diff"
-          rows="10"
+          id="cli-output"
+          :value="executionOutput"
+          rows="15"
           readonly
-          class="w-full p-2 border border-gray-200 rounded-md bg-white font-mono text-xs"
-          style="min-height: 150px;"
+          class="w-full p-2 border border-gray-300 rounded-md shadow-sm bg-gray-50 font-mono text-xs flex-grow"
+          placeholder="Output from cursor-agent will appear here..."
         ></textarea>
       </div>
-    </div>
-    
-    <div v-else class="flex-grow flex justify-center items-center">
-      <p class="text-gray-500">No split diffs to display. Go to Step 3 to split a diff.</p>
-    </div>
-
-    
-    <div class="mt-6 flex space-x-4 flex-shrink-0 flex-row justify-between">
-      <div>
-        <h3 class="text-lg font-medium text-gray-700 mb-2">Coming soon</h3>
-        <p class="text-gray-600 text-sm">
-          - Apply Patch from Shotgun
-        </p>
-        <p class="text-gray-600 text-sm">
-          - Apply Patch automatically
+      <div class="flex-shrink-0">
+        <button
+          @click="executeCli"
+          :disabled="isExecuting || !finalPrompt"
+          class="px-6 py-2 bg-blue-600 text-white font-semibold rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 disabled:bg-gray-400 flex items-center"
+        >
+          <div v-if="isExecuting" class="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+          {{ isExecuting ? 'Executing...' : 'Execute with Final Prompt' }}
+        </button>
+        <p v-if="!finalPrompt" class="text-xs text-red-500 mt-1">
+          The final prompt is empty. Please compose a prompt in Step 2.
         </p>
       </div>
-      <!--
-      <button
-      @click="$emit('action', 'finishSplitting'), finishButtonText = 'Hooray! 🎉'"
-      class="px-6 py-2 bg-blue-500 text-white font-semibold rounded-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50"
-      :class="finishButtonText === 'Hooray! 🎉' ? 'bg-green-200 text-black hover:bg-green-200' : ''"
-      >
-        {{ finishButtonText }}
-      </button> 
-      -->
     </div>
   </div>
 </template>
 
 <script setup>
-const finishButtonText = ref('Finish');
-import { ref, defineProps, watch } from 'vue';
-// import { ClipboardSetText as WailsClipboardSetText } from '../../../wailsjs/runtime/runtime'; // If needed for specific platforms
+import { ref, onMounted, computed } from 'vue';
+import { CheckCursorInstallation, InstallCursorCli, ExecuteCliTool } from '../../../wailsjs/go/main/App';
+import { LogError as LogErrorRuntime, LogInfo as LogInfoRuntime } from '../../../wailsjs/runtime/runtime';
 
 const props = defineProps({
-  splitDiffs: {
-    type: Array,
-    default: () => []
-  },
-  isLoading: { // To indicate if MainLayout is fetching/processing splits
-    type: Boolean,
-    default: false
-  },
-  platform: {
-    type: String,
-    default: 'unknown'
-  },
-  splitLineLimit: { // Add the new prop
-    type: Number,
-    default: 500 // Provide a default value if the prop is not passed
-  }
+  platform: { type: String, default: 'unknown' },
+  finalPrompt: { type: String, default: '' },
+  projectRoot: { type: String, default: '' },
 });
 
-defineEmits(['action']);
+const emit = defineEmits(['action']);
 
-const copyButtonTexts = ref({});
-const isCopied = ref({}); // Tracks if a split has been successfully copied at least once
+const cliStatus = ref('checking'); // 'checking', 'installed', 'not_installed', 'error'
+const cliPath = ref('');
+const cliError = ref('');
+const isInstalling = ref(false);
+const installationLog = ref('');
+const isExecuting = ref(false);
+const executionOutput = ref('');
 
-function getLineMetricClass(lineCount) {
-  const limit = props.splitLineLimit;
-  // clamp the thresholds to maximum 100 or 200 lines over the limit
-  const orangeThreshold = Math.min(limit * 1.1, limit + 100);
-  const redThreshold = Math.min(limit * 1.3, limit + 200);
-  
-  if (lineCount > redThreshold) {
-    return 'bg-red-100';
-  } else if (lineCount > orangeThreshold) {
-    return 'bg-orange-100';
-  } else {
-    return 'bg-green-100';
-  }
-}
+const isWslError = computed(() => {
+  return props.platform === 'windows' && cliError.value.toLowerCase().includes('wsl');
+});
 
-watch(() => props.splitDiffs, (newVal) => {
-  // Reset copy button texts and copied states when diffs change
-  const newTexts = {};
-  const newCopiedStates = {};
-  if (newVal) {
-    newVal.forEach((_, index) => {
-      newTexts[index] = 'Copy';
-      newCopiedStates[index] = false; // Initialize as not copied
-    });
-  }
-  copyButtonTexts.value = newTexts;
-  isCopied.value = newCopiedStates;
-}, { immediate: true, deep: true }); // Use deep: true if splitDiffs could be mutated internally, though usually props are replaced.
-
-
-async function copyDiffToClipboard(diffContent, index) {
-  if (!diffContent) return;
+async function checkCli() {
+  cliStatus.value = 'checking';
+  cliError.value = '';
   try {
-    await navigator.clipboard.writeText(diffContent);
-    
-    isCopied.value[index] = true; // Mark as successfully copied
-    copyButtonTexts.value[index] = 'Copied! ✅';
-
-    setTimeout(() => {
-      copyButtonTexts.value[index] = 'Copy ✅'; // Persistent "copied" state text
-    }, 2000);
+    const result = await CheckCursorInstallation();
+    cliStatus.value = result.status;
+    if (result.status === 'installed') {
+      cliPath.value = result.path;
+      LogInfoRuntime(`Cursor CLI found at: ${result.path}`);
+    } else {
+      LogInfoRuntime('Cursor CLI not found.');
+    }
   } catch (err) {
-    console.error(`Failed to copy diff split ${index + 1}: `, err);
-    
-    // Temporarily show "Failed!"
-    const originalText = isCopied.value[index] ? 'Copy ✅' : 'Copy';
-    copyButtonTexts.value[index] = 'Failed!';
-
-    setTimeout(() => {
-      copyButtonTexts.value[index] = originalText; // Revert to previous state ("Copy" or "Copy ✅")
-    }, 2000);
+    cliStatus.value = 'error';
+    cliError.value = err.message || String(err);
+    LogErrorRuntime(`Error checking for Cursor CLI: ${cliError.value}`);
   }
 }
-</script> 
+
+async function installCli() {
+  isInstalling.value = true;
+  installationLog.value = 'Starting installation...';
+  try {
+    await InstallCursorCli();
+    installationLog.value = 'Installation successful! Re-checking status...';
+    LogInfoRuntime('Cursor CLI installation completed.');
+    await checkCli(); // Re-check to update UI
+  } catch (err) {
+    installationLog.value = `Installation failed:\n${err.message || String(err)}`;
+    LogErrorRuntime(`Cursor CLI installation failed: ${installationLog.value}`);
+  } finally {
+    isInstalling.value = false;
+  }
+}
+
+async function executeCli() {
+  if (!props.finalPrompt || !props.projectRoot || !cliPath.value) {
+    LogErrorRuntime('Cannot execute CLI: missing prompt, project root, or CLI path.');
+    executionOutput.value = 'Error: Missing prompt, project root, or CLI path. Cannot execute.';
+    return;
+  }
+  isExecuting.value = true;
+  executionOutput.value = 'Executing...';
+  try {
+    const output = await ExecuteCliTool(props.finalPrompt, props.projectRoot, cliPath.value);
+    executionOutput.value = output;
+    LogInfoRuntime('Cursor CLI execution successful.');
+    emit('action', 'cliExecutionSuccess');
+  } catch (err) {
+    executionOutput.value = `Execution failed:\n${err.message || String(err)}`;
+    LogErrorRuntime(`Cursor CLI execution failed: ${executionOutput.value}`);
+  } finally {
+    isExecuting.value = false;
+  }
+}
+
+onMounted(() => {
+  checkCli();
+});
+</script>

@@ -6,13 +6,21 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
+	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
+	goruntime "runtime"
 	"sort"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/google/generative-ai-go/genai"
+	"google.golang.org/api/iterator"
+	"google.golang.org/api/option"
 
 	"github.com/adrg/xdg"
 	"github.com/fsnotify/fsnotify"
@@ -1021,6 +1029,289 @@ func (a *App) SetUseCustomIgnore(enabled bool) error {
 		return a.fileWatcher.RefreshIgnoresAndRescan()
 	}
 	return nil
+}
+
+// --- Google Gemini Communication ---
+
+// GeminiPart represents a single part of a message (e.g., text).
+type GeminiPart struct {
+	Text string `json:"text"`
+}
+
+// GeminiMessage represents a single message in the chat history.
+type GeminiMessage struct {
+	Role  string       `json:"role"` // "user" or "model"
+	Parts []GeminiPart `json:"parts"`
+}
+
+// ChatRequest is the structure for a request from the frontend to Gemini.
+type ChatRequest struct {
+	History     []GeminiMessage `json:"history"`
+	Message     string          `json:"message"`
+	Temperature float32         `json:"temperature"`
+}
+
+// CommunicateWithGoogleAI handles streaming chat with the Google Gemini API.
+// It runs in a goroutine and sends events back to the frontend.
+func (a *App) CommunicateWithGoogleAI(request ChatRequest) {
+	go func() {
+		apiKey := a.LoadApiKey()
+		if apiKey == "" {
+			errMsg := "Google AI API key is not set."
+			runtime.EventsEmit(a.ctx, "streamError", errMsg)
+			runtime.LogError(a.ctx, "CommunicateWithGoogleAI: "+errMsg)
+			return
+		}
+
+		client, err := genai.NewClient(a.ctx, option.WithAPIKey(apiKey))
+		if err != nil {
+			errMsg := fmt.Sprintf("Failed to create Google AI client: %v", err)
+			runtime.EventsEmit(a.ctx, "streamError", errMsg)
+			runtime.LogError(a.ctx, "CommunicateWithGoogleAI: "+errMsg)
+			return
+		}
+		defer client.Close()
+
+		model := client.GenerativeModel("gemini-1.5-pro-latest")
+		if request.Temperature > 0 {
+			model.Temperature = &request.Temperature
+		}
+
+		chat := model.StartChat()
+		chat.History = make([]*genai.Content, 0, len(request.History))
+		for _, msg := range request.History {
+			if msg.Role != "user" && msg.Role != "model" {
+				continue // Skip invalid roles
+			}
+			genaiParts := make([]genai.Part, 0, len(msg.Parts))
+			for _, p := range msg.Parts {
+				genaiParts = append(genaiParts, genai.Text(p.Text))
+			}
+			chat.History = append(chat.History, &genai.Content{Parts: genaiParts, Role: msg.Role})
+		}
+
+		iter := chat.SendMessageStream(a.ctx, genai.Text(request.Message))
+
+		for {
+			resp, err := iter.Next()
+			if err == iterator.Done {
+				break
+			}
+			if err != nil {
+				errMsg := fmt.Sprintf("Error receiving chunk from Google AI: %v", err)
+				runtime.EventsEmit(a.ctx, "streamError", errMsg)
+				runtime.LogError(a.ctx, "CommunicateWithGoogleAI: "+errMsg)
+				return
+			}
+
+			for _, cand := range resp.Candidates {
+				if cand.Content != nil {
+					for _, part := range cand.Content.Parts {
+						if txt, ok := part.(genai.Text); ok {
+							runtime.EventsEmit(a.ctx, "newChunk", string(txt))
+						}
+					}
+				}
+			}
+		}
+		runtime.EventsEmit(a.ctx, "streamEnd", "Stream finished successfully.")
+		runtime.LogInfo(a.ctx, "CommunicateWithGoogleAI: Stream finished successfully.")
+	}()
+}
+
+func (a *App) CheckCursorInstallation() (map[string]string, error) {
+	// On Windows, we need to check inside WSL.
+	if goruntime.GOOS == "windows" {
+		wslAgentPath := "~/.cursor/bin/cursor-agent"
+		// The `test -f` command will exit with 0 if the file exists, 1 otherwise.
+		cmd := exec.CommandContext(a.ctx, "wsl", "test", "-f", wslAgentPath)
+
+		err := cmd.Run()
+
+		if err == nil {
+			// Exit code 0 means file exists. We should return the full path.
+			out, errPath := exec.CommandContext(a.ctx, "wsl", "realpath", wslAgentPath).Output()
+			if errPath != nil {
+				// If realpath fails, we can fallback to the tilde path as it's still valid for execution.
+				runtime.LogWarningf(a.ctx, "Could not resolve real path for %s in WSL, falling back to tilde path: %v", wslAgentPath, errPath)
+				return map[string]string{
+					"status": "installed",
+					"path":   wslAgentPath,
+				}, nil
+			}
+
+			return map[string]string{
+				"status": "installed",
+				"path":   strings.TrimSpace(string(out)),
+			}, nil
+		}
+
+		if _, ok := err.(*exec.ExitError); ok {
+			// Command executed, but returned non-zero exit code. File not found.
+			runtime.LogInfof(a.ctx, "Cursor CLI not found in WSL: %v", err)
+			return map[string]string{"status": "not_installed"}, nil
+		}
+		// Some other error, like "wsl" command not found.
+		runtime.LogErrorf(a.ctx, "Error checking for Cursor CLI in WSL: %v", err)
+		return nil, fmt.Errorf("error running wsl command: %w", err)
+	}
+
+	// For macOS and Linux
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return nil, fmt.Errorf("could not get user home directory: %w", err)
+	}
+	agentPath := filepath.Join(homeDir, ".cursor", "bin", "cursor-agent")
+	if _, err := os.Stat(agentPath); err == nil {
+		return map[string]string{"status": "installed", "path": agentPath}, nil
+	} else if os.IsNotExist(err) {
+		return map[string]string{"status": "not_installed"}, nil
+	}
+	return nil, fmt.Errorf("error checking for cursor-agent: %w", err)
+}
+
+func (a *App) InstallCursorCli() error {
+	runtime.LogInfo(a.ctx, "Starting Cursor CLI installation...")
+
+	// 1. Download the script
+	resp, err := http.Get("https://cursor.com/install")
+	if err != nil {
+		runtime.LogErrorf(a.ctx, "Failed to download installation script: %v", err)
+		return fmt.Errorf("failed to download installation script: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		runtime.LogErrorf(a.ctx, "Failed to download installation script: status code %d", resp.StatusCode)
+		return fmt.Errorf("bad status code from download URL: %d", resp.StatusCode)
+	}
+
+	// 2. Create a temporary file
+	var tempFile *os.File
+	if goruntime.GOOS == "windows" {
+		// Create a temp file with .sh extension so WSL can execute it with bash
+		tempFile, err = os.CreateTemp("", "cursor-install-*.sh")
+	} else {
+		tempFile, err = os.CreateTemp("", "cursor-install-*")
+	}
+
+	if err != nil {
+		runtime.LogErrorf(a.ctx, "Failed to create temporary file: %v", err)
+		return fmt.Errorf("failed to create temporary file: %w", err)
+	}
+
+	// 3. Ensure cleanup
+	defer func() {
+		// Close is called explicitly before execution, but we call it here again just in case of early returns.
+		// It's safe to call Close multiple times.
+		_ = tempFile.Close()
+		errRemove := os.Remove(tempFile.Name())
+		if errRemove != nil {
+			runtime.LogWarningf(a.ctx, "Failed to remove temporary installation script %s: %v", tempFile.Name(), errRemove)
+		} else {
+			runtime.LogInfof(a.ctx, "Removed temporary installation script: %s", tempFile.Name())
+		}
+	}()
+
+	// 4. Write script to temp file
+	_, err = io.Copy(tempFile, resp.Body)
+	if err != nil {
+		runtime.LogErrorf(a.ctx, "Failed to write script to temporary file: %v", err)
+		return fmt.Errorf("failed to write script to temporary file: %w", err)
+	}
+
+	// Close the file so it can be executed.
+	if err := tempFile.Close(); err != nil {
+		runtime.LogErrorf(a.ctx, "Failed to close temporary file before execution: %v", err)
+		return fmt.Errorf("failed to close temporary file before execution: %w", err)
+	}
+
+	// 5. Make it executable (for non-Windows)
+	if goruntime.GOOS != "windows" {
+		err = os.Chmod(tempFile.Name(), 0755)
+		if err != nil {
+			runtime.LogErrorf(a.ctx, "Failed to make script executable: %v", err)
+			return fmt.Errorf("failed to make script executable: %w", err)
+		}
+	}
+
+	// 6. Execute the script
+	var cmd *exec.Cmd
+	if goruntime.GOOS == "windows" {
+		// Convert Windows path to WSL path.
+		wslPath := strings.Replace(tempFile.Name(), `\\`, `/`, -1)
+		if len(wslPath) > 2 && wslPath[1] == ':' {
+			driveLetter := strings.ToLower(string(wslPath[0]))
+			wslPath = "/mnt/" + driveLetter + wslPath[2:]
+		}
+
+		runtime.LogInfof(a.ctx, "Executing installation script inside WSL: bash %s", wslPath)
+		cmd = exec.CommandContext(a.ctx, "wsl", "bash", wslPath)
+	} else {
+		runtime.LogInfof(a.ctx, "Executing installation script: %s", tempFile.Name())
+		cmd = exec.CommandContext(a.ctx, tempFile.Name())
+	}
+
+	// Capture output for logging
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		runtime.LogErrorf(a.ctx, "Installation script failed. Output:\n%s\nError: %v", string(output), err)
+		return fmt.Errorf("installation script failed: %w. Output: %s", err, string(output))
+	}
+
+	runtime.LogInfof(a.ctx, "Installation script executed successfully. Output:\n%s", string(output))
+
+	runtime.LogInfo(a.ctx, "Cursor CLI installation completed successfully.")
+	return nil
+}
+
+// ExecuteCliTool runs the cursor-agent CLI tool with the given prompt and project root.
+// It handles OS-specific execution, including running within WSL on Windows.
+func (a *App) ExecuteCliTool(prompt string, projectRoot string, executorPath string) (string, error) {
+	runtime.LogInfof(a.ctx, "Executing CLI tool: %s for project: %s", executorPath, projectRoot)
+
+	var cmd *exec.Cmd
+
+	if goruntime.GOOS == "windows" {
+		// On Windows, we execute via WSL and need to translate the project path.
+		wslProjectRoot, err := toWSLPath(projectRoot)
+		if err != nil {
+			runtime.LogErrorf(a.ctx, "Failed to convert project root to WSL path: %v", err)
+			return "", fmt.Errorf("failed to convert project root to WSL path: %w", err)
+		}
+		runtime.LogInfof(a.ctx, "Converted project root to WSL path: %s", wslProjectRoot)
+
+		// The executor path is likely already a WSL path (e.g., from CheckCursorInstallation)
+		// so we don't convert it.
+		args := []string{executorPath, "--prompt", prompt, "--project-root", wslProjectRoot}
+		cmd = exec.CommandContext(a.ctx, "wsl", args...)
+
+	} else {
+		// For macOS and Linux, execute directly.
+		args := []string{"--prompt", prompt, "--project-root", projectRoot}
+		cmd = exec.CommandContext(a.ctx, executorPath, args...)
+	}
+
+	runtime.LogInfof(a.ctx, "Running command: %s", cmd.String())
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		runtime.LogErrorf(a.ctx, "CLI execution failed. Error: %v. Output: %s", err, string(output))
+		return "", fmt.Errorf("cli execution failed: %w. Output: %s", err, string(output))
+	}
+
+	runtime.LogInfof(a.ctx, "CLI execution successful. Output length: %d", len(output))
+	return string(output), nil
+}
+
+// toWSLPath converts a Windows path (e.g., C:\Users\Test) to a WSL path (e.g., /mnt/c/Users/Test).
+func toWSLPath(windowsPath string) (string, error) {
+	if len(windowsPath) < 2 || windowsPath[1] != ':' {
+		return "", fmt.Errorf("invalid Windows path format: %s", windowsPath)
+	}
+	driveLetter := strings.ToLower(string(windowsPath[0]))
+	restOfPath := filepath.ToSlash(windowsPath[2:])
+	return "/mnt/" + driveLetter + restOfPath, nil
 }
 
 func (a *App) AssembleFinalPrompt(templateContent string, userTask string, rulesContent string, fileContext string) (string, error) {

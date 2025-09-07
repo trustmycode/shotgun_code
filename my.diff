@@ -1,108 +1,141 @@
 diff --git a/app.go b/app.go
-index 81b212c..5718697 100644
+index 81b212c..e247481 100644
 --- a/app.go
 +++ b/app.go
-@@ -26,6 +26,7 @@
- type AppSettings struct {
- 	CustomIgnoreRules string `json:"customIgnoreRules"`
- 	CustomPromptRules string `json:"customPromptRules"`
-+	ApiKey            string `json:"apiKey,omitempty"`
- }
- 
- type App struct {
-@@ -1011,6 +1012,23 @@
+@@ -6,9 +6,11 @@
+ 	"errors"
+ 	"fmt"
+ 	"io/fs"
+ 	"os"
++	"os/exec"
+ 	"path/filepath"
++	goruntime "runtime"
+ 	"sort"
+ 	"strings"
+ 	"sync"
+
+@@ -1035,6 +1037,55 @@
  	return nil
  }
  
-+// SaveApiKey saves the Google AI API key to the settings file.
-+func (a *App) SaveApiKey(key string) error {
-+	a.settings.ApiKey = key
-+	err := a.saveSettings()
-+	if err != nil {
-+		return fmt.Errorf("failed to save API key: %w", err)
++func (a *App) CheckCursorInstallation() (map[string]string, error) {
++	// On Windows, we need to check inside WSL.
++	if goruntime.GOOS == "windows" {
++		wslAgentPath := "~/.cursor/bin/cursor-agent"
++		// The `test -f` command will exit with 0 if the file exists, 1 otherwise.
++		cmd := exec.CommandContext(a.ctx, "wsl", "test", "-f", wslAgentPath)
++
++		err := cmd.Run()
++
++		if err == nil {
++			// Exit code 0 means file exists. We should return the full path.
++			out, errPath := exec.CommandContext(a.ctx, "wsl", "realpath", wslAgentPath).Output()
++			if errPath != nil {
++				// If realpath fails, we can fallback to the tilde path as it's still valid for execution.
++				runtime.LogWarningf(a.ctx, "Could not resolve real path for %s in WSL, falling back to tilde path: %v", wslAgentPath, errPath)
++				return map[string]string{
++					"status": "installed",
++					"path":   wslAgentPath,
++				}, nil
++			}
++
++			return map[string]string{
++				"status": "installed",
++				"path":   strings.TrimSpace(string(out)),
++			}, nil
++		}
++
++		if _, ok := err.(*exec.ExitError); ok {
++			// Command executed, but returned non-zero exit code. File not found.
++			runtime.LogInfof(a.ctx, "Cursor CLI not found in WSL: %v", err)
++			return map[string]string{"status": "not_installed"}, nil
++		}
++		// Some other error, like "wsl" command not found.
++		runtime.LogErrorf(a.ctx, "Error checking for Cursor CLI in WSL: %v", err)
++		return nil, fmt.Errorf("error running wsl command: %w", err)
 +	}
-+	runtime.LogInfo(a.ctx, "API Key saved successfully.")
-+	return nil
++
++	// For macOS and Linux
++	homeDir, err := os.UserHomeDir()
++	if err != nil {
++		return nil, fmt.Errorf("could not get user home directory: %w", err)
++	}
++	agentPath := filepath.Join(homeDir, ".cursor", "bin", "cursor-agent")
++	if _, err := os.Stat(agentPath); err == nil {
++		return map[string]string{"status": "installed", "path": agentPath}, nil
++	} else if os.IsNotExist(err) {
++		return map[string]string{"status": "not_installed"}, nil
++	}
++	return nil, fmt.Errorf("error checking for cursor-agent: %w", err)
 +}
 +
-+// LoadApiKey loads the Google AI API key from the settings.
-+func (a *App) LoadApiKey() string {
-+	// Settings are loaded at startup. If the key is empty, it's either not set or couldn't be loaded.
-+	return a.settings.ApiKey
-+}
-+
- // SetUseGitignore updates the app's setting for using .gitignore and informs the watcher.
- func (a *App) SetUseGitignore(enabled bool) error {
- 	a.useGitignore = enabled
+ func (a *App) AssembleFinalPrompt(templateContent string, userTask string, rulesContent string, fileContext string) (string, error) {
+     runtime.LogDebugf(a.ctx, "AssembleFinalPrompt called. Task len: %d, Rules len: %d, Context len: %d", len(userTask), len(rulesContent), len(fileContext))
 
 diff --git a/frontend/wailsjs/go/main/App.d.ts b/frontend/wailsjs/go/main/App.d.ts
 index 5410196..4198305 100644
 --- a/frontend/wailsjs/go/main/App.d.ts
 +++ b/frontend/wailsjs/go/main/App.d.ts
-@@ -8,11 +8,15 @@
+@@ -5,6 +5,8 @@
  
- export function ListFiles(arg1:string):Promise<Array<main.FileNode>>;
+ export function AssembleFinalPrompt(arg1:string,arg2:string,arg3:string,arg4:string):Promise<string>;
  
-+export function LoadApiKey():Promise<string>;
++export function CheckCursorInstallation():Promise<{[key: string]: string}>;
 +
- export function RequestShotgunContextGeneration(arg1:string,arg2:Array<string>):Promise<void>;
+ export function GetCustomIgnoreRules():Promise<string>;
  
- export function SelectDirectory():Promise<string>;
+ export function GetCustomPromptRules():Promise<string>;
  
-+export function SaveApiKey(arg1:string):Promise<void>;
-+
- export function SetCustomIgnoreRules(arg1:string):Promise<void>;
- 
- export function SetCustomPromptRules(arg1:string):Promise<void>;
-
 diff --git a/frontend/wailsjs/go/main/App.js b/frontend/wailsjs/go/main/App.js
 index 725807e..526027c 100644
 --- a/frontend/wailsjs/go/main/App.js
 +++ b/frontend/wailsjs/go/main/App.js
-@@ -18,12 +18,20 @@
-   return window['go']['main']['App']['ListFiles'](arg1);
- }
+@@ -2,6 +2,18 @@
+ // Cynhyrchwyd y ffeil hon yn awtomatig. PEIDIWCH Â MODIWL
+ // This file is automatically generated. DO NOT EDIT
  
-+export function LoadApiKey() {
-+  return window['go']['main']['App']['LoadApiKey']();
++export function AssembleFinalPrompt(arg1, arg2, arg3, arg4) {
++  return window['go']['main']['App']['AssembleFinalPrompt'](arg1, arg2, arg3, arg4);
 +}
 +
- export function RequestShotgunContextGeneration(arg1, arg2) {
-   return window['go']['main']['App']['RequestShotgunContextGeneration'](arg1, arg2);
- }
- 
- export function SelectDirectory() {
-   return window['go']['main']['App']['SelectDirectory']();
++export function CheckCursorInstallation() {
++  return window['go']['main']['App']['CheckCursorInstallation']();
 +}
 +
-+export function SaveApiKey(arg1) {
-+  return window['go']['main']['App']['SaveApiKey'](arg1);
+ export function GetCustomIgnoreRules() {
+   return window['go']['main']['App']['GetCustomIgnoreRules']();
  }
- 
- export function SetCustomIgnoreRules(arg1) {
 
-diff --git a/tasks/2025-Q3/TASK-2025-005-backend-api-key.md b/tasks/2025-Q3/TASK-2025-005-backend-api-key.md
+diff --git a/tasks/2025-Q3/TASK-2025-006-backend-check-cli.md b/tasks/2025-Q3/TASK-2025-006-backend-check-cli.md
 index 109968a..7800057 100644
---- a/tasks/2025-Q3/TASK-2025-005-backend-api-key.md
-+++ b/tasks/2025-Q3/TASK-2025-005-backend-api-key.md
-@@ -2,15 +2,16 @@
+--- a/tasks/2025-Q3/TASK-2025-006-backend-check-cli.md
++++ b/tasks/2025-Q3/TASK-2025-006-backend-check-cli.md
+@@ -1,17 +1,23 @@
  ---
- id: TASK-2025-005
- title: "Задача 1.1: Управление API ключом"
+ id: TASK-2025-006
+ title: "Задача 1.2: Реализация проверки установки Cursor CLI"
 -status: backlog
 +status: done
  priority: high
  type: feature
- estimate: 1h
- assignee: '@unassigned'
+ estimate: 2h
+ assignee: "@unassigned"
  created: 2025-09-03
 -updated: 2025-09-03
 +updated: 2025-09-04
  parents: [TASK-2025-004]
- arch_refs: [ARCH-BACKEND-GEMINI-PROXY]
+ arch_refs: [ARCH-BACKEND-CLI-MANAGER]
  audit_log:
-   - {date: 2025-09-03, user: "@AI-DocArchitect", action: "created with status backlog"}
-+  - {date: 2025-09-04, user: "@Robotic-SSE", action: "implemented SaveApiKey and LoadApiKey; status changed to done"}
+   - {
+       date: 2025-09-03,
+       user: "@AI-DocArchitect",
+       action: "created with status backlog",
+     }
++  - {
++      date: 2025-09-04,
++      user: "@Robotic-SSE",
++      action: "implemented CheckCursorInstallation; status changed to done",
++    }
  ---
+ 
  ## Описание
- Реализовать безопасное сохранение и загрузку Google AI API ключа пользователя. Ключ должен храниться в файле конфигурации в домашней директории пользователя и не должен передаваться на фронтенд.

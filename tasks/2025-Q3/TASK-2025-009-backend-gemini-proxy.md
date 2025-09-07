@@ -1,17 +1,18 @@
 ---
 id: TASK-2025-009
 title: "Задача 1.5: Реализация потоковой прокси-функции для Google AI"
-status: backlog
+status: done
 priority: high
 type: feature
 estimate: 2h
 assignee: '@unassigned'
 created: 2025-09-03
-updated: 2025-09-03
+updated: 2025-09-04
 parents: [TASK-2025-004]
 arch_refs: [ARCH-BACKEND-GEMINI-PROXY]
 audit_log:
   - {date: 2025-09-03, user: "@AI-DocArchitect", action: "created with status backlog"}
+  - {date: 2025-09-04, user: "@Robotic-SSE", action: "implemented CommunicateWithGoogleAI; status changed to done"}
 ---
 ## Описание
 Создать на бэкенде функцию, которая будет проксировать запросы к Gemini API в потоковом режиме, управляя API-ключом и транслируя ответы на фронтенд через события Wails.

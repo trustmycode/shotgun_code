@@ -5,9 +5,17 @@ import {context} from '../models';
 
 export function AssembleFinalPrompt(arg1:string,arg2:string,arg3:string,arg4:string):Promise<string>;
 
+export function CheckCursorInstallation():Promise<Record<string, string>>;
+
+export function CommunicateWithGoogleAI(arg1:main.ChatRequest):Promise<void>;
+
+export function ExecuteCliTool(arg1:string,arg2:string,arg3:string):Promise<string>;
+
 export function GetCustomIgnoreRules():Promise<string>;
 
 export function GetCustomPromptRules():Promise<string>;
+
+export function InstallCursorCli():Promise<void>;
 
 export function ListFiles(arg1:string):Promise<Array<main.FileNode>>;
 
@@ -15,9 +23,9 @@ export function LoadApiKey():Promise<string>;
 
 export function RequestShotgunContextGeneration(arg1:string,arg2:Array<string>):Promise<void>;
 
-export function SelectDirectory():Promise<string>;
-
 export function SaveApiKey(arg1:string):Promise<void>;
+
+export function SelectDirectory():Promise<string>;
 
 export function SetCustomIgnoreRules(arg1:string):Promise<void>;
 

@@ -1,17 +1,18 @@
 ---
 id: TASK-2025-007
 title: "Задача 1.3: Реализация установщика Cursor CLI"
-status: backlog
+status: done
 priority: high
 type: feature
 estimate: 2h
 assignee: '@unassigned'
 created: 2025-09-03
-updated: 2025-09-03
+updated: 2025-09-04
 parents: [TASK-2025-004]
 arch_refs: [ARCH-BACKEND-CLI-MANAGER]
 audit_log:
   - {date: 2025-09-03, user: "@AI-DocArchitect", action: "created with status backlog"}
+  - {date: 2025-09-04, user: "@Robotic-SSE", action: "implemented InstallCursorCli; status changed to done"}
 ---
 ## Описание
 Создать функцию, которая безопасно скачивает и выполняет официальный установочный скрипт Cursor CLI. Процесс должен быть безопасным и очищать временные файлы после завершения.

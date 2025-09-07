@@ -1,13 +1,13 @@
 ---
 id: TASK-2025-006
 title: "Задача 1.2: Реализация проверки установки Cursor CLI"
-status: backlog
+status: done
 priority: high
 type: feature
 estimate: 2h
 assignee: "@unassigned"
 created: 2025-09-03
-updated: 2025-09-03
+updated: 2025-09-04
 parents: [TASK-2025-004]
 arch_refs: [ARCH-BACKEND-CLI-MANAGER]
 audit_log:
@@ -15,6 +15,11 @@ audit_log:
       date: 2025-09-03,
       user: "@AI-DocArchitect",
       action: "created with status backlog",
+    }
+  - {
+      date: 2025-09-04,
+      user: "@Robotic-SSE",
+      action: "implemented CheckCursorInstallation; status changed to done",
     }
 ---
 
