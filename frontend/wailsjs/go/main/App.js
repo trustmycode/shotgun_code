@@ -81,3 +81,7 @@ export function StartupTest(arg1) {
 export function StopFileWatcher() {
   return window['go']['main']['App']['StopFileWatcher']();
 }
+
+export function WSLClipboardSetText(arg1) {
+  return window['go']['main']['App']['WSLClipboardSetText'](arg1);
+}

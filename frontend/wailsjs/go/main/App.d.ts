@@ -42,3 +42,5 @@ export function StartFileWatcher(arg1:string):Promise<void>;
 export function StartupTest(arg1:context.Context):Promise<void>;
 
 export function StopFileWatcher():Promise<void>;
+
+export function WSLClipboardSetText(arg1:string):Promise<void>;
