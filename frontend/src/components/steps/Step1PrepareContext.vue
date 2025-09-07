@@ -54,6 +54,7 @@
 <script setup>
 import { defineProps, ref, computed } from 'vue';
 import { ClipboardSetText as WailsClipboardSetText } from '../../../wailsjs/runtime/runtime';
+import { WSLClipboardSetText } from '../../../wailsjs/go/main/App';
 
 const props = defineProps({
   generatedContext: {
@@ -90,21 +91,29 @@ const copyButtonText = ref('Copy All');
 async function copyGeneratedContextToClipboard() {
   if (!props.generatedContext) return;
   try {
-    await navigator.clipboard.writeText(props.generatedContext);
-    //if (props.platform === 'darwin') {
-    //  await WailsClipboardSetText(props.generatedContext);
-    //} else {
-    //  await navigator.clipboard.writeText(props.generatedContext);
-    //}
+    // Try WSL clipboard method first (best for WSL compatibility)
+    try {
+      await WSLClipboardSetText(props.generatedContext);
+      console.log('Successfully copied using WSL clip.exe method');
+    } catch (wslError) {
+      console.warn('WSL clipboard failed, trying Wails API:', wslError);
+      try {
+        await WailsClipboardSetText(props.generatedContext);
+        console.log('Successfully copied using Wails clipboard API');
+      } catch (wailsError) {
+        console.warn('Wails clipboard failed, falling back to browser API:', wailsError);
+        // Fallback to browser clipboard API
+        await navigator.clipboard.writeText(props.generatedContext);
+        console.log('Successfully copied using browser clipboard API');
+      }
+    }
+    
     copyButtonText.value = 'Copied!';
     setTimeout(() => {
       copyButtonText.value = 'Copy All';
     }, 2000);
   } catch (err) {
-    console.error('Failed to copy context: ', err);
-    if (props.platform === 'darwin' && err) {
-      console.error('darvin ClipboardSetText failed for context:', err);
-    }
+    console.error('All clipboard methods failed:', err);
     copyButtonText.value = 'Failed!';
     setTimeout(() => {
       copyButtonText.value = 'Copy All';

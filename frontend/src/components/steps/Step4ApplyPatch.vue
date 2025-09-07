@@ -84,7 +84,8 @@
 <script setup>
 const finishButtonText = ref('Finish');
 import { ref, defineProps, watch } from 'vue';
-// import { ClipboardSetText as WailsClipboardSetText } from '../../../wailsjs/runtime/runtime'; // If needed for specific platforms
+import { ClipboardSetText as WailsClipboardSetText } from '../../../wailsjs/runtime/runtime';
+import { WSLClipboardSetText } from '../../../wailsjs/go/main/App';
 
 const props = defineProps({
   splitDiffs: {
@@ -143,7 +144,22 @@ watch(() => props.splitDiffs, (newVal) => {
 async function copyDiffToClipboard(diffContent, index) {
   if (!diffContent) return;
   try {
-    await navigator.clipboard.writeText(diffContent);
+    // Try WSL clipboard method first (best for WSL compatibility)
+    try {
+      await WSLClipboardSetText(diffContent);
+      console.log(`Successfully copied diff split ${index + 1} using WSL clip.exe method`);
+    } catch (wslError) {
+      console.warn(`WSL clipboard failed for diff split ${index + 1}, trying Wails API:`, wslError);
+      try {
+        await WailsClipboardSetText(diffContent);
+        console.log(`Successfully copied diff split ${index + 1} using Wails clipboard API`);
+      } catch (wailsError) {
+        console.warn(`Wails clipboard failed for diff split ${index + 1}, falling back to browser API:`, wailsError);
+        // Fallback to browser clipboard API
+        await navigator.clipboard.writeText(diffContent);
+        console.log(`Successfully copied diff split ${index + 1} using browser clipboard API`);
+      }
+    }
     
     isCopied.value[index] = true; // Mark as successfully copied
     copyButtonTexts.value[index] = 'Copied! ✅';
@@ -152,7 +168,7 @@ async function copyDiffToClipboard(diffContent, index) {
       copyButtonTexts.value[index] = 'Copy ✅'; // Persistent "copied" state text
     }, 2000);
   } catch (err) {
-    console.error(`Failed to copy diff split ${index + 1}: `, err);
+    console.error(`All clipboard methods failed for diff split ${index + 1}:`, err);
     
     // Temporarily show "Failed!"
     const originalText = isCopied.value[index] ? 'Copy ✅' : 'Copy';

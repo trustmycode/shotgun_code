@@ -115,7 +115,7 @@
 <script setup>
 import { ref, watch, onMounted, computed } from 'vue';
 import { ClipboardSetText as WailsClipboardSetText } from '../../../wailsjs/runtime/runtime';
-import { GetCustomPromptRules, SetCustomPromptRules } from '../../../wailsjs/go/main/App';
+import { GetCustomPromptRules, SetCustomPromptRules, WSLClipboardSetText } from '../../../wailsjs/go/main/App';
 import { LogInfo as LogInfoRuntime, LogError as LogErrorRuntime } from '../../../wailsjs/runtime/runtime';
 import CustomRulesModal from '../CustomRulesModal.vue';
 
@@ -286,16 +286,29 @@ watch(selectedPromptTemplateKey, () => {
 async function copyFinalPromptToClipboard() {
   if (!props.finalPrompt) return;
   try {
-    await navigator.clipboard.writeText(props.finalPrompt);
+    // Try WSL clipboard method first (best for WSL compatibility)
+    try {
+      await WSLClipboardSetText(props.finalPrompt);
+      console.log('Successfully copied final prompt using WSL clip.exe method');
+    } catch (wslError) {
+      console.warn('WSL clipboard failed, trying Wails API:', wslError);
+      try {
+        await WailsClipboardSetText(props.finalPrompt);
+        console.log('Successfully copied final prompt using Wails clipboard API');
+      } catch (wailsError) {
+        console.warn('Wails clipboard failed, falling back to browser API:', wailsError);
+        // Fallback to browser clipboard API
+        await navigator.clipboard.writeText(props.finalPrompt);
+        console.log('Successfully copied final prompt using browser clipboard API');
+      }
+    }
+    
     copyButtonText.value = 'Copied!';
     setTimeout(() => {
       copyButtonText.value = 'Copy All';
     }, 2000);
   } catch (err) {
-    console.error('Failed to copy final prompt: ', err);
-    if (props.platform === 'darwin' && err) {
-      console.error('darvin ClipboardSetText failed for final prompt:', err);
-    }
+    console.error('All clipboard methods failed for final prompt:', err);
     copyButtonText.value = 'Failed!';
     setTimeout(() => {
       copyButtonText.value = 'Copy All';

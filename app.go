@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -438,10 +439,10 @@ func (a *App) generateShotgunOutputWithProgress(jobCtx context.Context, rootDir 
 
 			isLast := i == len(visibleEntries)-1
 
-			branch := "├── "
-			nextPrefix := prefix + "│   "
+			branch := "|-- "
+			nextPrefix := prefix + "|   "
 			if isLast {
-				branch = "└── "
+				branch = "`-- "
 				nextPrefix = prefix + "    "
 			}
 			output.WriteString(prefix + branch + entry.Name() + "\n")
@@ -1002,5 +1003,104 @@ func (a *App) SetUseCustomIgnore(enabled bool) error {
 		// Assuming watcher is for the current project if active.
 		return a.fileWatcher.RefreshIgnoresAndRescan()
 	}
+	return nil
+}
+
+// WSLClipboardSetText copies text to clipboard using PowerShell Set-Clipboard for WSL compatibility.
+// This method bypasses X11/WSLg clipboard issues by using native Windows clipboard.
+// For large data, uses temporary file approach to avoid command line argument limits.
+func (a *App) WSLClipboardSetText(text string) error {
+	// Check if we're in WSL by looking for WSL environment variables
+	wslDistro := os.Getenv("WSL_DISTRO_NAME")
+	if wslDistro == "" {
+		// Not in WSL, fall back to regular Wails clipboard
+		return fmt.Errorf("not running in WSL environment, use regular clipboard methods")
+	}
+
+	runtime.LogInfof(a.ctx, "Using WSL clipboard via PowerShell Set-Clipboard for %d characters", len(text))
+
+	// For small text (<10KB), use direct command approach, otherwise use temp file
+	const maxDirectArgLength = 10000
+	
+	if len(text) <= maxDirectArgLength {
+		// For smaller text, try direct command approach first
+		escapedText := strings.ReplaceAll(text, "'", "''")
+		cmd := exec.Command("powershell.exe", "-Command", "Set-Clipboard -Value '"+escapedText+"'")
+		
+		err := cmd.Run()
+		if err != nil {
+			runtime.LogErrorf(a.ctx, "Failed to copy to clipboard via PowerShell Set-Clipboard (direct): %v", err)
+			// Fallback to temp file even for small data if direct method fails
+			return a.wslClipboardViaTempFile(text)
+		}
+		
+		runtime.LogInfo(a.ctx, "Successfully copied to Windows clipboard via PowerShell Set-Clipboard (direct)")
+		return nil
+	}
+
+	// For any text larger than 10KB, always use temporary file approach
+	runtime.LogInfof(a.ctx, "Text size %d > %d, using temporary file method", len(text), maxDirectArgLength)
+	return a.wslClipboardViaTempFile(text)
+}
+
+// wslClipboardViaTempFile handles large clipboard data by writing to a temporary file
+func (a *App) wslClipboardViaTempFile(text string) error {
+	// Create a temporary file in WSL /tmp directory (Linux path)
+	// Use timestamp for uniqueness
+	timestamp := time.Now().UnixNano()
+	tempFileName := fmt.Sprintf("shotgun_clip_%d.txt", timestamp)
+	
+	// Write to WSL /tmp directory (accessible from Go/Linux)
+	wslTempFilePath := filepath.Join("/tmp", tempFileName)
+	
+	runtime.LogInfof(a.ctx, "Using temporary file for large clipboard data: %s", wslTempFilePath)
+	
+	// Write text to temporary file with UTF-8 encoding
+	err := os.WriteFile(wslTempFilePath, []byte(text), 0644)
+	if err != nil {
+		runtime.LogErrorf(a.ctx, "Failed to write temporary clipboard file: %v", err)
+		return fmt.Errorf("failed to write temporary clipboard file: %w", err)
+	}
+	
+	// Ensure cleanup of temporary file (using WSL path)
+	defer func() {
+		if removeErr := os.Remove(wslTempFilePath); removeErr != nil {
+			runtime.LogWarningf(a.ctx, "Failed to clean up temporary clipboard file %s: %v", wslTempFilePath, removeErr)
+		}
+	}()
+	
+	// Get WSL distro name for Windows path conversion
+	wslDistro := os.Getenv("WSL_DISTRO_NAME")
+	if wslDistro == "" {
+		// Fallback to common distro name or try generic approach
+		wslDistro = "Ubuntu"
+		runtime.LogWarningf(a.ctx, "WSL_DISTRO_NAME not found, using fallback: %s", wslDistro)
+	}
+	
+	// Convert WSL path to Windows-accessible path: \\wsl$\distro\tmp\file.txt
+	winAccessiblePath := fmt.Sprintf("\\\\wsl$\\%s\\tmp\\%s", wslDistro, tempFileName)
+	runtime.LogInfof(a.ctx, "PowerShell will access file via: %s", winAccessiblePath)
+	
+	// Use PowerShell to read file from WSL filesystem and set clipboard
+	psCommand := fmt.Sprintf("Get-Content -Path '%s' -Encoding UTF8 -Raw | Set-Clipboard", winAccessiblePath)
+	cmd := exec.Command("powershell.exe", "-Command", psCommand)
+	
+	err = cmd.Run()
+	if err != nil {
+		runtime.LogErrorf(a.ctx, "Failed to copy to clipboard via PowerShell Set-Clipboard (temp file): %v", err)
+		// Try alternative WSL localhost path if \\wsl$ failed
+		winAccessiblePathAlt := fmt.Sprintf("\\\\wsl.localhost\\%s\\tmp\\%s", wslDistro, tempFileName)
+		runtime.LogInfof(a.ctx, "Retrying with alternative path: %s", winAccessiblePathAlt)
+		psCommandAlt := fmt.Sprintf("Get-Content -Path '%s' -Encoding UTF8 -Raw | Set-Clipboard", winAccessiblePathAlt)
+		cmdAlt := exec.Command("powershell.exe", "-Command", psCommandAlt)
+		
+		err = cmdAlt.Run()
+		if err != nil {
+			runtime.LogErrorf(a.ctx, "Both WSL path methods failed: %v", err)
+			return fmt.Errorf("failed to copy to Windows clipboard via temp file: %w", err)
+		}
+	}
+	
+	runtime.LogInfo(a.ctx, "Successfully copied to Windows clipboard via PowerShell Set-Clipboard (temp file)")
 	return nil
 }
