@@ -94,7 +94,7 @@ hence the name.
 - **Node.js LTS** `node -v`
 - **Wails CLI** `go install github.com/wailsapp/wails/v2/cmd/wails@latest`
 - **Google AI API key** – Required for AI chat functionality. Create one for free in [Google AI Studio](https://aistudio.google.com/app/apikey). You'll be prompted to enter this key when you first use the chat feature in Step 3.
-- **Windows users:** ⚠️ **WSL 2 with Ubuntu (or another supported distro) is required.** The Cursor CLI installation and execution run inside WSL on Windows.
+- **Windows users:** WSL 2 with Ubuntu (or another supported distro); the Cursor CLI installation runs inside WSL.
 
 ### 5.2. Clone & Bootstrap
 

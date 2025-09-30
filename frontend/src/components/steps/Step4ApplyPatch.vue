@@ -119,6 +119,10 @@ async function checkCli() {
 }
 
 async function installCli() {
+  if (!window.confirm('This will download and execute the official installation script from cursor.com to install the `cursor-agent` CLI tool. Do you want to continue?')) {
+    installationLog.value = 'Installation cancelled by user.';
+    return;
+  }
   isInstalling.value = true;
   installationLog.value = 'Starting installation...';
   try {

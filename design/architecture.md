@@ -116,21 +116,26 @@ It implements a multi-step user interface to guide the user through the process 
     -   Forwards actions from step components to `MainLayout.vue`.
     -   Exposes methods like `updateStep2DiffOutput` and `addLogToStep3Console` to allow `MainLayout.vue` to push data into specific step components (e.g., diff output into Step 2, logs into Step 3's console).
 -   **`components/steps/Step1CopyStructure.vue`** (handles "Prepare Context"):
-    -   UI for the first step.
-    -   Contains a "Prepare Project Context & Proceed" button.
-    -   Emits an action (e.g., `prepareContext`) to `MainLayout.vue` to signify completion and move to the next step.
+    -   UI for the first step, which displays the generated project context.
+    -   Shows a progress bar during context generation.
+    -   Provides a button to copy the context to the clipboard.
 -   **`components/steps/Step2GenerateDiff.vue`** (handles "Compose Prompt"):
     -   UI for the second step.
-    -   Includes a `<textarea>` for the user to input their prompt for the LLM.
-    -   A "Compose Prompt" button that triggers an action (e.g., `composePrompt`) with the prompt text.
-    -   A `<pre>` block to display the diff output received from `MainLayout.vue`.
--   **`components/steps/Step3ExecuteDiff.vue`** (handles "Execute Prompt"):
-    -   UI for the third step.
-    -   A "Execute Prompt" button (e.g., `executePrompt`).
+    -   Includes a `<textarea>` for the user to input their task for the LLM.
+    -   Allows selection of different prompt templates.
+    -   Provides an editor for custom rules to be included in the prompt.
+    -   Assembles and displays the final prompt in real-time.
+-   **`components/steps/Step3Chat.vue`** (handles "Chat with AI"):
+    -   UI for the third step, implementing a real-time chat with a Google Gemini backend.
+    -   Manages an API key for the AI service.
+    -   Displays a streaming chat history.
+    -   The initial prompt from Step 2 is sent as the first message.
+    -   Provides a mechanism to finalize the chat and use the last AI response as the definitive prompt for Step 4.
 -   **`components/steps/Step4ApplyPatch.vue`**:
-    -   UI for the fourth step.
-    -   A placeholder for an interactive patch editor (shows stubbed hunks with checkboxes).
-    -   "Apply Selected" and "Apply All & Finish" buttons.
+    -   UI for the fourth step, which integrates with the Cursor CLI (`cursor-agent`).
+    -   Checks if the CLI is installed and provides an installation button if it's not.
+    -   Executes the final prompt from Step 3 using the CLI against the selected project.
+    -   Displays the output from the CLI execution.
 -   **`components/BottomConsole.vue`**:
     -   A console area at the bottom of the application.
     -   Displays general execution status logs passed from `MainLayout.vue`.
@@ -157,44 +162,38 @@ The application operates based on a sequence of steps, managed by `MainLayout.vu
 1.  **Initialization (Step 1: Prepare Context)**:
     -   The application starts at Step 1.
     -   `CentralPanel.vue` displays `Step1CopyStructure.vue`.
-    -   User Action: Clicks "Prepare Project Context & Proceed".
-    -   `Step1CopyStructure.vue` emits an `action` (e.g., `prepareContext`) to `MainLayout.vue`.
-    -   `MainLayout.vue` handles the action:
-        -   Simulates a backend call (e.g., `GenerateShotgunOutput` to prepare the context).
+    -   When a project is selected, `MainLayout.vue` triggers a backend call (`RequestShotgunContextGeneration`) to prepare the context asynchronously.
         -   Logs the action to `BottomConsole.vue` (if visible) and potentially to a step-specific console.
         -   Marks Step 1 as completed.
         -   Advances `currentStep` to 2.
 
 2.  **Step 2: Compose Prompt**:
     -   `CentralPanel.vue` now displays `Step2GenerateDiff.vue`.
-    -   User Action: Enters a prompt in the textarea and clicks "Compose Prompt".
-    -   `Step2GenerateDiff.vue` emits an `action` (e.g., `composePrompt`) with the prompt payload to `MainLayout.vue`.
-    -   `MainLayout.vue` handles the action:
-        -   Simulates a backend call to an LLM (this would involve sending the prompt and context to an LLM to get a diff).
-        -   Receives a mock diff output.
-        -   Calls `centralPanelRef.value.updateStep2DiffOutput(mockDiff)` to send the diff to `Step2GenerateDiff.vue` for display.
-        -   Logs the action.
+    -   User Action: Enters a task in the textarea and selects a template.
+    -   The component calls a Go backend function (`AssembleFinalPrompt`) to generate the complete initial prompt for the AI.
+    -   `MainLayout.vue` stores this composed prompt.
         -   Marks Step 2 as completed.
         -   Advances `currentStep` to 3.
 
-3.  **Step 3: Execute Prompt**:
-    -   `CentralPanel.vue` displays `Step3ExecuteDiff.vue`.
+3.  **Step 3: Chat with AI**:
+    -   `CentralPanel.vue` displays `Step3Chat.vue`.
     -   `BottomConsole.vue` becomes visible (or more active).
-    -   User Action: Clicks "Execute Prompt".
-    -   `Step3ExecuteDiff.vue` emits an `action` (e.g., `executePrompt`) to `MainLayout.vue`.
+    -   The component loads the user's Google AI API key.
+    -   It automatically sends the composed prompt from Step 2 as the first message.
+    -   The user interacts with the AI in a streaming chat interface. The backend `CommunicateWithGoogleAI` function streams responses back via Wails events.
+    -   User Action: Clicks "Use Last Response & Proceed".
+    -   `Step3Chat.vue` emits a `finalizePrompt` action to `MainLayout.vue` with the content of the last AI message.
     -   `MainLayout.vue` handles the action:
-        -   Simulates the execution of the diff (e.g., applying changes in memory or preparing for a patch, this is conceptual for "executing the prompt's intent").
-        -   Sends logs specifically to `Step3ExecuteDiff.vue`'s console via `centralPanelRef.value.addLogToStep3Console(message, type)`.
-        -   Also sends general logs to `BottomConsole.vue`.
+        -   Stores the final prompt.
         -   Marks Step 3 as completed.
         -   Advances `currentStep` to 4.
 
-4.  **Step 4: Apply Patch**:
+4.  **Step 4: Execute with Cursor CLI**:
     -   `CentralPanel.vue` displays `Step4ApplyPatch.vue`.
-    -   User Action: Interacts with the (stubbed) patch editor (e.g., selecting hunks) and clicks "Apply Selected" or "Apply All & Finish".
-    -   `Step4ApplyPatch.vue` emits an `action` (e.g., `applySelectedPatches` or `applyAllPatches`) to `MainLayout.vue`.
+    -   User Action: Clicks "Execute with Final Prompt".
+    -   The frontend calls the Go backend function `ExecuteCliTool`, passing the final prompt and project root.
+    -   The backend runs the `cursor-agent` command and returns the output.
     -   `MainLayout.vue` handles the action:
-        -   Simulates applying the patches to the file system.
         -   Logs the final actions.
         -   Marks Step 4 as completed.
         -   The process might conclude, or allow for further iterations/restarts.

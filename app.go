@@ -1072,7 +1072,7 @@ func (a *App) CommunicateWithGoogleAI(request ChatRequest) {
 		}
 		defer client.Close()
 
-		model := client.GenerativeModel("gemini-1.5-pro-latest")
+		model := client.GenerativeModel("gemini-2.5-pro")
 		if request.Temperature > 0 {
 			model.Temperature = &request.Temperature
 		}
