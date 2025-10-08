@@ -6,16 +6,20 @@ export function AssembleFinalPrompt(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['AssembleFinalPrompt'](arg1, arg2, arg3, arg4);
 }
 
-export function CheckCursorInstallation() {
-  return window['go']['main']['App']['CheckCursorInstallation']();
+export function AuthorizeCodexCli() {
+  return window['go']['main']['App']['AuthorizeCodexCli']();
+}
+
+export function CheckCodexCli() {
+  return window['go']['main']['App']['CheckCodexCli']();
 }
 
 export function CommunicateWithGoogleAI(arg1) {
   return window['go']['main']['App']['CommunicateWithGoogleAI'](arg1);
 }
 
-export function ExecuteCliTool(arg1, arg2, arg3) {
-  return window['go']['main']['App']['ExecuteCliTool'](arg1, arg2, arg3);
+export function ExecuteCodexCli(arg1, arg2, arg3) {
+  return window['go']['main']['App']['ExecuteCodexCli'](arg1, arg2, arg3);
 }
 
 export function GetCustomIgnoreRules() {
@@ -26,8 +30,8 @@ export function GetCustomPromptRules() {
   return window['go']['main']['App']['GetCustomPromptRules']();
 }
 
-export function InstallCursorCli() {
-  return window['go']['main']['App']['InstallCursorCli']();
+export function InstallCodexCli() {
+  return window['go']['main']['App']['InstallCodexCli']();
 }
 
 export function ListFiles(arg1) {

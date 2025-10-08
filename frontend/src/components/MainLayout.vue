@@ -27,6 +27,7 @@
                     :platform="platform"
                     :user-task="userTask"
                     :rules-content="rulesContent"
+                    :chat-temperature="chatTemperature"
                     :final-prompt="finalPrompt"
                     @step-action="handleStepAction"
                     @update-composed-prompt="handleComposedPromptUpdate"
@@ -50,8 +51,14 @@ import HorizontalStepper from './HorizontalStepper.vue';
 import LeftSidebar from './LeftSidebar.vue';
 import CentralPanel from './CentralPanel.vue';
 import BottomConsole from './BottomConsole.vue';
-import { ListFiles, RequestShotgunContextGeneration, SelectDirectory as SelectDirectoryGo, StartFileWatcher, StopFileWatcher, SetUseGitignore, SetUseCustomIgnore } from '../../wailsjs/go/main/App';
+import { ListFiles, RequestShotgunContextGeneration, SelectDirectory as SelectDirectoryGo, StartFileWatcher, StopFileWatcher, SetUseGitignore, SetUseCustomIgnore, AssembleFinalPrompt } from '../../wailsjs/go/main/App';
 import { EventsOn, Environment } from '../../wailsjs/runtime/runtime';
+
+// Import prompt templates
+import devTemplateContentFromFile from '../../../design/prompts/prompt_makeDiffGitFormat.md?raw';
+import architectTemplateContentFromFile from '../../../design/prompts/prompt_makePlan.md?raw';
+import findBugTemplateContentFromFile from '../../../design/prompts/prompt_analyzeBug.md?raw';
+import projectManagerTemplateContentFromFile from '../../../design/prompts/prompt_projectManager.md?raw';
 
 const currentStep = ref(1);
 const steps = ref([
@@ -60,6 +67,13 @@ const steps = ref([
   { id: 3, title: 'Chat with AI', completed: false, description: 'Interact with the AI to refine the request and generate the final prompt or diff.' },
   { id: 4, title: 'Apply Patch', completed: false, description: 'Copy and apply the smaller diff parts to your project.' },
 ]);
+
+const promptTemplates = {
+  dev: { name: 'Dev', content: devTemplateContentFromFile },
+  architect: { name: 'Architect', content: architectTemplateContentFromFile },
+  findBug: { name: 'Find Bug', content: findBugTemplateContentFromFile },
+  projectManager: { name: 'Project: Update Tasks', content: projectManagerTemplateContentFromFile },
+};
 
 const logMessages = ref([]);
 const centralPanelRef = ref(null); 
@@ -94,6 +108,7 @@ const platform = ref('unknown'); // To store OS platform (e.g., 'darwin', 'windo
 const userTask = ref('');
 const rulesContent = ref('');
 const finalPrompt = ref('');
+const chatTemperature = ref(0.1); // Default temperature
 let debounceTimer = null;
 
 // Watcher related
@@ -397,6 +412,31 @@ async function handleStepAction(actionName, payload) {
       finalPrompt.value = payload.finalPrompt;
       if (currentStepObj) currentStepObj.completed = true;
       navigateToStep(4);
+      break;
+    case 'proceedToStep3':
+      if (currentStep.value !== 2) return;
+
+      if (payload && payload.finalPrompt) {
+        finalPrompt.value = payload.finalPrompt;
+        addLog(`Received fresh final prompt from Step 2. Length: ${payload.finalPrompt.length}`, 'debug');
+      }
+
+      if (payload && payload.role) {
+        const role = payload.role;
+        if (role === 'dev' || role === 'projectManager') {
+          chatTemperature.value = 0.1;
+          addLog(`Setting chat temperature to 0.1 for role: ${role}`, 'debug');
+        } else if (role === 'architect' || role === 'findBug') {
+          chatTemperature.value = 0.75;
+          addLog(`Setting chat temperature to 0.75 for role: ${role}`, 'debug');
+        }
+      }
+
+      addLog('Proceeding to Step 3...', 'info');
+      const step2 = steps.value.find(s => s.id === 2);
+      if (step2) step2.completed = true;
+
+      navigateToStep(3);
       break;
     case 'applySelectedPatches':
     case 'applyAllPatches':

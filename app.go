@@ -6,9 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -1119,161 +1117,166 @@ func (a *App) CommunicateWithGoogleAI(request ChatRequest) {
 	}()
 }
 
-func (a *App) CheckCursorInstallation() (map[string]string, error) {
+func (a *App) CheckCodexCli() (map[string]string, error) {
 	// On Windows, we need to check inside WSL.
 	if goruntime.GOOS == "windows" {
-		wslAgentPath := "~/.cursor/bin/cursor-agent"
-		// The `test -f` command will exit with 0 if the file exists, 1 otherwise.
-		cmd := exec.CommandContext(a.ctx, "wsl", "test", "-f", wslAgentPath)
+		// Check for codex in PATH (within WSL)
+		cmd := exec.CommandContext(a.ctx, "wsl", "which", "codex")
+		out, err := cmd.Output()
 
-		err := cmd.Run()
-
-		if err == nil {
-			// Exit code 0 means file exists. We should return the full path.
-			out, errPath := exec.CommandContext(a.ctx, "wsl", "realpath", wslAgentPath).Output()
-			if errPath != nil {
-				// If realpath fails, we can fallback to the tilde path as it's still valid for execution.
-				runtime.LogWarningf(a.ctx, "Could not resolve real path for %s in WSL, falling back to tilde path: %v", wslAgentPath, errPath)
-				return map[string]string{
-					"status": "installed",
-					"path":   wslAgentPath,
-				}, nil
+		if err != nil {
+			// 'which' returns non-zero if command not found
+			if _, ok := err.(*exec.ExitError); ok {
+				runtime.LogInfof(a.ctx, "codex CLI not found in WSL PATH")
+				return map[string]string{"status": "not_installed"}, nil
 			}
+			// Some other error, like "wsl" command not found
+			runtime.LogErrorf(a.ctx, "Error checking for codex CLI in WSL: %v", err)
+			return nil, fmt.Errorf("error running wsl command: %w", err)
+		}
 
+		codexPath := strings.TrimSpace(string(out))
+		runtime.LogInfof(a.ctx, "Found codex at: %s", codexPath)
+
+		// Check for config.toml to determine auth status
+		configPath := "~/.codex/config.toml"
+		testCmd := exec.CommandContext(a.ctx, "wsl", "test", "-f", configPath)
+		if testErr := testCmd.Run(); testErr == nil {
+			// Config file exists - assume authenticated
 			return map[string]string{
-				"status": "installed",
-				"path":   strings.TrimSpace(string(out)),
+				"status": "installed_and_authed",
+				"path":   codexPath,
 			}, nil
 		}
 
-		if _, ok := err.(*exec.ExitError); ok {
-			// Command executed, but returned non-zero exit code. File not found.
-			runtime.LogInfof(a.ctx, "Cursor CLI not found in WSL: %v", err)
-			return map[string]string{"status": "not_installed"}, nil
-		}
-		// Some other error, like "wsl" command not found.
-		runtime.LogErrorf(a.ctx, "Error checking for Cursor CLI in WSL: %v", err)
-		return nil, fmt.Errorf("error running wsl command: %w", err)
+		// Codex found but no config - not authenticated
+		return map[string]string{
+			"status": "installed_not_authed",
+			"path":   codexPath,
+		}, nil
 	}
 
-	// For macOS and Linux
+	// For macOS and Linux: check for codex in PATH
+	codexPath, err := exec.LookPath("codex")
+	if err != nil {
+		runtime.LogInfof(a.ctx, "codex CLI not found in PATH: %v", err)
+		return map[string]string{"status": "not_installed"}, nil
+	}
+
+	runtime.LogInfof(a.ctx, "Found codex at: %s", codexPath)
+
+	// Check for ~/.codex/config.toml
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return nil, fmt.Errorf("could not get user home directory: %w", err)
 	}
-	agentPath := filepath.Join(homeDir, ".cursor", "bin", "cursor-agent")
-	if _, err := os.Stat(agentPath); err == nil {
-		return map[string]string{"status": "installed", "path": agentPath}, nil
-	} else if os.IsNotExist(err) {
-		return map[string]string{"status": "not_installed"}, nil
+
+	configPath := filepath.Join(homeDir, ".codex", "config.toml")
+	if _, err := os.Stat(configPath); err == nil {
+		// Config file exists - assume authenticated
+		return map[string]string{
+			"status": "installed_and_authed",
+			"path":   codexPath,
+		}, nil
 	}
-	return nil, fmt.Errorf("error checking for cursor-agent: %w", err)
+
+	// Codex found but no config - not authenticated
+	return map[string]string{
+		"status": "installed_not_authed",
+		"path":   codexPath,
+	}, nil
 }
 
-func (a *App) InstallCursorCli() error {
-	runtime.LogInfo(a.ctx, "Starting Cursor CLI installation...")
+func (a *App) InstallCodexCli() error {
+	runtime.LogInfo(a.ctx, "Starting Codex CLI installation via npm...")
 
-	// 1. Download the script
-	resp, err := http.Get("https://cursor.com/install")
-	if err != nil {
-		runtime.LogErrorf(a.ctx, "Failed to download installation script: %v", err)
-		return fmt.Errorf("failed to download installation script: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		runtime.LogErrorf(a.ctx, "Failed to download installation script: status code %d", resp.StatusCode)
-		return fmt.Errorf("bad status code from download URL: %d", resp.StatusCode)
-	}
-
-	// 2. Create a temporary file
-	var tempFile *os.File
-	if goruntime.GOOS == "windows" {
-		// Create a temp file with .sh extension so WSL can execute it with bash
-		tempFile, err = os.CreateTemp("", "cursor-install-*.sh")
-	} else {
-		tempFile, err = os.CreateTemp("", "cursor-install-*")
-	}
-
-	if err != nil {
-		runtime.LogErrorf(a.ctx, "Failed to create temporary file: %v", err)
-		return fmt.Errorf("failed to create temporary file: %w", err)
-	}
-
-	// 3. Ensure cleanup
-	defer func() {
-		// Close is called explicitly before execution, but we call it here again just in case of early returns.
-		// It's safe to call Close multiple times.
-		_ = tempFile.Close()
-		errRemove := os.Remove(tempFile.Name())
-		if errRemove != nil {
-			runtime.LogWarningf(a.ctx, "Failed to remove temporary installation script %s: %v", tempFile.Name(), errRemove)
-		} else {
-			runtime.LogInfof(a.ctx, "Removed temporary installation script: %s", tempFile.Name())
-		}
-	}()
-
-	// 4. Write script to temp file
-	_, err = io.Copy(tempFile, resp.Body)
-	if err != nil {
-		runtime.LogErrorf(a.ctx, "Failed to write script to temporary file: %v", err)
-		return fmt.Errorf("failed to write script to temporary file: %w", err)
-	}
-
-	// Close the file so it can be executed.
-	if err := tempFile.Close(); err != nil {
-		runtime.LogErrorf(a.ctx, "Failed to close temporary file before execution: %v", err)
-		return fmt.Errorf("failed to close temporary file before execution: %w", err)
-	}
-
-	// 5. Make it executable (for non-Windows)
-	if goruntime.GOOS != "windows" {
-		err = os.Chmod(tempFile.Name(), 0755)
-		if err != nil {
-			runtime.LogErrorf(a.ctx, "Failed to make script executable: %v", err)
-			return fmt.Errorf("failed to make script executable: %w", err)
-		}
-	}
-
-	// 6. Execute the script
 	var cmd *exec.Cmd
-	if goruntime.GOOS == "windows" {
-		// Convert Windows path to WSL path.
-		wslPath := strings.Replace(tempFile.Name(), `\\`, `/`, -1)
-		if len(wslPath) > 2 && wslPath[1] == ':' {
-			driveLetter := strings.ToLower(string(wslPath[0]))
-			wslPath = "/mnt/" + driveLetter + wslPath[2:]
-		}
 
-		runtime.LogInfof(a.ctx, "Executing installation script inside WSL: bash %s", wslPath)
-		cmd = exec.CommandContext(a.ctx, "wsl", "bash", wslPath)
+	if goruntime.GOOS == "windows" {
+		// On Windows, run npm via WSL
+		runtime.LogInfo(a.ctx, "Executing npm install via WSL")
+		cmd = exec.CommandContext(a.ctx, "wsl", "npm", "install", "-g", "@openai/codex")
 	} else {
-		runtime.LogInfof(a.ctx, "Executing installation script: %s", tempFile.Name())
-		cmd = exec.CommandContext(a.ctx, tempFile.Name())
+		// On macOS and Linux, run npm directly
+		runtime.LogInfo(a.ctx, "Executing npm install")
+		cmd = exec.CommandContext(a.ctx, "npm", "install", "-g", "@openai/codex")
 	}
 
-	// Capture output for logging
+	// Capture output for logging and error reporting
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		runtime.LogErrorf(a.ctx, "Installation script failed. Output:\n%s\nError: %v", string(output), err)
-		return fmt.Errorf("installation script failed: %w. Output: %s", err, string(output))
+		runtime.LogErrorf(a.ctx, "npm install failed. Output:\n%s\nError: %v", string(output), err)
+		return fmt.Errorf("npm install failed: %w. Output: %s", err, string(output))
 	}
 
-	runtime.LogInfof(a.ctx, "Installation script executed successfully. Output:\n%s", string(output))
-
-	runtime.LogInfo(a.ctx, "Cursor CLI installation completed successfully.")
+	runtime.LogInfof(a.ctx, "npm install executed successfully. Output:\n%s", string(output))
+	runtime.LogInfo(a.ctx, "Codex CLI installation completed successfully.")
 	return nil
 }
 
-// ExecuteCliTool runs the cursor-agent CLI tool with the given prompt and project root.
-// It handles OS-specific execution, including running within WSL on Windows.
-func (a *App) ExecuteCliTool(prompt string, projectRoot string, executorPath string) (string, error) {
-	runtime.LogInfof(a.ctx, "Executing CLI tool: %s for project: %s", executorPath, projectRoot)
+// AuthorizeCodexCli opens a new terminal window and runs the 'codex' command for authentication.
+// This is necessary because codex CLI requires interactive TUI for login.
+func (a *App) AuthorizeCodexCli() error {
+	runtime.LogInfo(a.ctx, "Opening new terminal for Codex CLI authentication...")
+
+	var cmd *exec.Cmd
+
+	switch goruntime.GOOS {
+	case "windows":
+		// Windows: open cmd and run codex via WSL
+		runtime.LogInfo(a.ctx, "Opening new cmd window on Windows")
+		cmd = exec.CommandContext(a.ctx, "cmd", "/c", "start", "cmd", "/k", "wsl", "codex")
+
+	case "darwin":
+		// macOS: open Terminal.app with codex command
+		runtime.LogInfo(a.ctx, "Opening new Terminal window on macOS")
+		cmd = exec.CommandContext(a.ctx, "open", "-a", "Terminal", "-n", "--args", "codex")
+
+	case "linux":
+		// Linux: try common terminal emulators in order of preference
+		runtime.LogInfo(a.ctx, "Opening new terminal window on Linux")
+
+		// Try gnome-terminal first
+		if _, err := exec.LookPath("gnome-terminal"); err == nil {
+			cmd = exec.CommandContext(a.ctx, "gnome-terminal", "--", "codex")
+		} else if _, err := exec.LookPath("xterm"); err == nil {
+			// Fallback to xterm
+			cmd = exec.CommandContext(a.ctx, "xterm", "-e", "codex")
+		} else if _, err := exec.LookPath("konsole"); err == nil {
+			// Fallback to konsole (KDE)
+			cmd = exec.CommandContext(a.ctx, "konsole", "-e", "codex")
+		} else if _, err := exec.LookPath("xfce4-terminal"); err == nil {
+			// Fallback to xfce4-terminal
+			cmd = exec.CommandContext(a.ctx, "xfce4-terminal", "-e", "codex")
+		} else {
+			runtime.LogError(a.ctx, "No supported terminal emulator found on Linux")
+			return fmt.Errorf("no supported terminal emulator found (tried gnome-terminal, xterm, konsole, xfce4-terminal)")
+		}
+
+	default:
+		return fmt.Errorf("unsupported operating system: %s", goruntime.GOOS)
+	}
+
+	// Start the command (non-blocking)
+	err := cmd.Start()
+	if err != nil {
+		runtime.LogErrorf(a.ctx, "Failed to open terminal for authorization: %v", err)
+		return fmt.Errorf("failed to open terminal: %w", err)
+	}
+
+	runtime.LogInfo(a.ctx, "Terminal opened successfully for Codex CLI authentication")
+	return nil
+}
+
+// ExecuteCodexCli runs the codex CLI tool with the given prompt in the specified project directory.
+// It handles OS-specific execution and uses 'codex exec' command format.
+func (a *App) ExecuteCodexCli(prompt string, projectRoot string, codexPath string) (string, error) {
+	runtime.LogInfof(a.ctx, "Executing Codex CLI: %s for project: %s", codexPath, projectRoot)
 
 	var cmd *exec.Cmd
 
 	if goruntime.GOOS == "windows" {
-		// On Windows, we execute via WSL and need to translate the project path.
+		// On Windows, we execute via WSL and need to translate the project path
 		wslProjectRoot, err := toWSLPath(projectRoot)
 		if err != nil {
 			runtime.LogErrorf(a.ctx, "Failed to convert project root to WSL path: %v", err)
@@ -1281,26 +1284,27 @@ func (a *App) ExecuteCliTool(prompt string, projectRoot string, executorPath str
 		}
 		runtime.LogInfof(a.ctx, "Converted project root to WSL path: %s", wslProjectRoot)
 
-		// The executor path is likely already a WSL path (e.g., from CheckCursorInstallation)
-		// so we don't convert it.
-		args := []string{executorPath, "--prompt", prompt, "--project-root", wslProjectRoot}
-		cmd = exec.CommandContext(a.ctx, "wsl", args...)
+		// Execute: wsl codex exec "<prompt>"
+		cmd = exec.CommandContext(a.ctx, "wsl", codexPath, "exec", prompt)
+		// Set working directory to WSL path
+		cmd.Dir = wslProjectRoot
 
 	} else {
-		// For macOS and Linux, execute directly.
-		args := []string{"--prompt", prompt, "--project-root", projectRoot}
-		cmd = exec.CommandContext(a.ctx, executorPath, args...)
+		// For macOS and Linux, execute directly: codex exec "<prompt>"
+		cmd = exec.CommandContext(a.ctx, codexPath, "exec", prompt)
+		// Set working directory to project root
+		cmd.Dir = projectRoot
 	}
 
-	runtime.LogInfof(a.ctx, "Running command: %s", cmd.String())
+	runtime.LogInfof(a.ctx, "Running command: %s in directory: %s", cmd.String(), cmd.Dir)
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		runtime.LogErrorf(a.ctx, "CLI execution failed. Error: %v. Output: %s", err, string(output))
-		return "", fmt.Errorf("cli execution failed: %w. Output: %s", err, string(output))
+		runtime.LogErrorf(a.ctx, "Codex CLI execution failed. Error: %v. Output: %s", err, string(output))
+		return "", fmt.Errorf("codex cli execution failed: %w. Output: %s", err, string(output))
 	}
 
-	runtime.LogInfof(a.ctx, "CLI execution successful. Output length: %d", len(output))
+	runtime.LogInfof(a.ctx, "Codex CLI execution successful. Output length: %d", len(output))
 	return string(output), nil
 }
 

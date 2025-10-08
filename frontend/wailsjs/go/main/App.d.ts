@@ -5,17 +5,19 @@ import {context} from '../models';
 
 export function AssembleFinalPrompt(arg1:string,arg2:string,arg3:string,arg4:string):Promise<string>;
 
-export function CheckCursorInstallation():Promise<Record<string, string>>;
+export function AuthorizeCodexCli():Promise<void>;
+
+export function CheckCodexCli():Promise<Record<string, string>>;
 
 export function CommunicateWithGoogleAI(arg1:main.ChatRequest):Promise<void>;
 
-export function ExecuteCliTool(arg1:string,arg2:string,arg3:string):Promise<string>;
+export function ExecuteCodexCli(arg1:string,arg2:string,arg3:string):Promise<string>;
 
 export function GetCustomIgnoreRules():Promise<string>;
 
 export function GetCustomPromptRules():Promise<string>;
 
-export function InstallCursorCli():Promise<void>;
+export function InstallCodexCli():Promise<void>;
 
 export function ListFiles(arg1:string):Promise<Array<main.FileNode>>;
 

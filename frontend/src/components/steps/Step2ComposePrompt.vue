@@ -36,13 +36,23 @@
               {{ template.name }}
             </option>
           </select>
-          <button
-            @click="copyFinalPromptToClipboard"
-            :disabled="!props.finalPrompt || isLoadingFinalPrompt"
-            class="px-3 py-1 bg-blue-500 text-white text-sm font-semibold rounded-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 disabled:bg-gray-300"
-          >
-            {{ copyButtonText }}
-          </button>
+          <div class="flex items-center space-x-2">
+            <button
+              @click="handleCopy"
+              :disabled="!localUserTask.trim()"
+              class="px-3 py-1 bg-gray-200 text-gray-800 text-sm font-semibold rounded-md hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-opacity-50 disabled:bg-gray-300"
+            >
+              {{ copyButtonText }}
+            </button>
+            <button
+              @click="handleNext"
+              :disabled="!localUserTask.trim() || isProcessingNext"
+              class="px-3 py-1 bg-blue-500 text-white text-sm font-semibold rounded-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 disabled:bg-gray-300"
+            >
+              <span v-if="isProcessingNext">Processing...</span>
+              <span v-else>Next</span>
+            </button>
+          </div>
         </div>
 
         <div>
@@ -146,7 +156,7 @@ const props = defineProps({
   }
 });
 
-const emit = defineEmits(['update:finalPrompt', 'update:userTask', 'update:rulesContent']);
+const emit = defineEmits(['update:finalPrompt', 'update:userTask', 'update:rulesContent', 'action']);
 
 const promptTemplates = {
   dev: { name: 'Dev', content: devTemplateContentFromFile },
@@ -158,13 +168,14 @@ const promptTemplates = {
 const isPromptVisible = ref(true);
 const selectedPromptTemplateKey = ref('dev');
 const isLoadingFinalPrompt = ref(false);
-const copyButtonText = ref('Copy All');
 let userTaskInputDebounceTimer = null;
 const isPromptRulesModalVisible = ref(false);
 const currentPromptRulesForModal = ref('');
 const isFirstMount = ref(true);
 const localUserTask = ref(props.userTask);
 const DEFAULT_RULES = `no additional rules`;
+const isProcessingNext = ref(false);
+const copyButtonText = ref('Copy');
 
 const charCount = computed(() => (props.finalPrompt || '').length);
 const approximateTokens = computed(() => Math.round(charCount.value / 3).toString().replace(/\B(?=(\d{3})+(?!\d))/g, " "));
@@ -203,37 +214,57 @@ async function updateFinalPrompt() {
   }
 }
 
-// Функция копирования, также вызывает Go для получения самой свежей версии
-async function copyFinalPromptToClipboard() {
-  isLoadingFinalPrompt.value = true; // Показываем индикатор, т.к. может занять время
-  let promptToCopy = '';
+async function handleCopy() {
+  copyButtonText.value = 'Copying...';
+  isLoadingFinalPrompt.value = true;
   try {
-    promptToCopy = await AssembleFinalPrompt(
+    const freshPrompt = await AssembleFinalPrompt(
       promptTemplates[selectedPromptTemplateKey.value].content,
       localUserTask.value,
       props.rulesContent,
       props.fileListContext
     );
-  } catch (error) {
-    console.error("Error assembling prompt for copy:", error);
-    LogErrorRuntime(`Error assembling prompt for copy: ${error.message || error}`);
-    copyButtonText.value = 'Failed!';
-    setTimeout(() => { copyButtonText.value = 'Copy All'; }, 2000);
-    isLoadingFinalPrompt.value = false;
-    return;
-  }
-  
-  isLoadingFinalPrompt.value = false;
-  if (!promptToCopy) return;
+    emit('update:finalPrompt', freshPrompt);
 
-  try {
-    await navigator.clipboard.writeText(promptToCopy);
+    await navigator.clipboard.writeText(freshPrompt);
+
     copyButtonText.value = 'Copied!';
-    setTimeout(() => { copyButtonText.value = 'Copy All'; }, 2000);
+    setTimeout(() => {
+      copyButtonText.value = 'Copy';
+    }, 2000);
   } catch (err) {
-    console.error('Failed to copy final prompt: ', err);
+    console.error('Failed to assemble or copy prompt: ', err);
+    LogErrorRuntime(`Failed to assemble or copy prompt: ${err.message || err}`);
+    emit('update:finalPrompt', `Error: Failed to generate and copy prompt. See console for details.`);
     copyButtonText.value = 'Failed!';
-    setTimeout(() => { copyButtonText.value = 'Copy All'; }, 2000);
+    setTimeout(() => {
+      copyButtonText.value = 'Copy';
+    }, 2000);
+  } finally {
+    isLoadingFinalPrompt.value = false;
+  }
+}
+
+async function handleNext() {
+  if (isProcessingNext.value) return;
+  isProcessingNext.value = true;
+  try {
+    const freshPrompt = await AssembleFinalPrompt(
+        promptTemplates[selectedPromptTemplateKey.value].content,
+        localUserTask.value,
+        props.rulesContent,
+        props.fileListContext
+    );
+
+    emit('action', 'proceedToStep3', {
+      role: selectedPromptTemplateKey.value,
+      finalPrompt: freshPrompt
+    });
+  } catch (error) {
+    console.error("Error assembling prompt on next:", error);
+    LogErrorRuntime(`Error assembling prompt on next: ${error.message || error}`);
+  } finally {
+    isProcessingNext.value = false;
   }
 }
 
