@@ -3,7 +3,7 @@
     <Step1CopyStructure v-if="currentStep === 1" @action="handleAction" :generated-context="shotgunPromptContext" :is-loading-context="props.isGeneratingContext" :project-root="props.projectRoot" :generation-progress="props.generationProgress" :platform="props.platform" />
     <Step2ComposePrompt v-if="currentStep === 2" @action="handleAction" ref="step2Ref" :file-list-context="props.shotgunPromptContext" @update:finalPrompt="(val) => emit('update-composed-prompt', val)" :platform="props.platform" :user-task="props.userTask" :rules-content="props.rulesContent" :final-prompt="props.finalPrompt" @update:userTask="(val) => emit('update:userTask', val)" @update:rulesContent="(val) => emit('update:rulesContent', val)" />
     <Step3Chat v-if="currentStep === 3" @action="handleAction" :initial-prompt="props.finalPrompt" :temperature="props.chatTemperature" />
-    <Step4ApplyPatch v-if="currentStep === 4" @action="handleAction" :platform="props.platform" :final-prompt="props.finalPrompt" :project-root="props.projectRoot" />
+    <Step4ApplyPatch v-if="currentStep === 4" @action="handleAction" :platform="props.platform" :final-prompt="props.finalPrompt" :project-root="props.projectRoot" @update:finalPrompt="(val) => emit('update:finalPrompt', val)" @add-log="(log) => emit('add-log', log)" />
   </main>
 </template>
 
@@ -27,7 +27,7 @@ const props = defineProps({
   chatTemperature: { type: Number, default: 0.1 }
 });
 
-const emit = defineEmits(['stepAction', 'update-composed-prompt', 'update:userTask', 'update:rulesContent']);
+const emit = defineEmits(['stepAction', 'update-composed-prompt', 'update:userTask', 'update:rulesContent', 'update:finalPrompt', 'add-log']);
 
 const step2Ref = ref(null);
 

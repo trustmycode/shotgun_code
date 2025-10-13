@@ -6,8 +6,16 @@ export function AssembleFinalPrompt(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['AssembleFinalPrompt'](arg1, arg2, arg3, arg4);
 }
 
+export function AuthorizeClaudeCli(arg1) {
+  return window['go']['main']['App']['AuthorizeClaudeCli'](arg1);
+}
+
 export function AuthorizeCodexCli() {
   return window['go']['main']['App']['AuthorizeCodexCli']();
+}
+
+export function CheckClaudeCli() {
+  return window['go']['main']['App']['CheckClaudeCli']();
 }
 
 export function CheckCodexCli() {
@@ -16,6 +24,10 @@ export function CheckCodexCli() {
 
 export function CommunicateWithGoogleAI(arg1) {
   return window['go']['main']['App']['CommunicateWithGoogleAI'](arg1);
+}
+
+export function ExecuteClaudeCli(arg1, arg2, arg3) {
+  return window['go']['main']['App']['ExecuteClaudeCli'](arg1, arg2, arg3);
 }
 
 export function ExecuteCodexCli(arg1, arg2, arg3) {

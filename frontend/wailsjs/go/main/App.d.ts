@@ -5,11 +5,17 @@ import {context} from '../models';
 
 export function AssembleFinalPrompt(arg1:string,arg2:string,arg3:string,arg4:string):Promise<string>;
 
+export function AuthorizeClaudeCli(arg1:string):Promise<void>;
+
 export function AuthorizeCodexCli():Promise<void>;
+
+export function CheckClaudeCli():Promise<Record<string, string>>;
 
 export function CheckCodexCli():Promise<Record<string, string>>;
 
 export function CommunicateWithGoogleAI(arg1:main.ChatRequest):Promise<void>;
+
+export function ExecuteClaudeCli(arg1:string,arg2:string,arg3:string):Promise<string>;
 
 export function ExecuteCodexCli(arg1:string,arg2:string,arg3:string):Promise<string>;
 

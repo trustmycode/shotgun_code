@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	_ "embed"
 	"encoding/json"
@@ -10,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	goruntime "runtime"
 	"sort"
 	"strings"
@@ -38,6 +40,7 @@ type AppSettings struct {
 	CustomIgnoreRules string `json:"customIgnoreRules"`
 	CustomPromptRules string `json:"customPromptRules"`
 	ApiKey            string `json:"apiKey,omitempty"`
+	ClaudeOauthToken  string `json:"claudeOauthToken,omitempty"`
 }
 
 type App struct {
@@ -1117,9 +1120,256 @@ func (a *App) CommunicateWithGoogleAI(request ChatRequest) {
 	}()
 }
 
+// runInteractiveCommandWithTimeout runs a command that might hang waiting for user input.
+// It reads the command's output until a 'successMarker' is found or a timeout is reached,
+// then forcefully terminates the command and returns the captured output.
+func (a *App) runInteractiveCommandWithTimeout(ctx context.Context, successMarker string, timeout time.Duration, command string, args ...string) (string, error) {
+	// The command will be run within a context that has a timeout.
+	cmdCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(cmdCtx, command, args...)
+
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return "", fmt.Errorf("failed to create stdout pipe: %w", err)
+	}
+	// It's often useful to capture stderr as well, as errors or status messages can appear there.
+	cmd.Stderr = cmd.Stdout
+
+	if err := cmd.Start(); err != nil {
+		return "", fmt.Errorf("failed to start command: %w", err)
+	}
+
+	// This defer ensures the process is killed if the function exits for any reason.
+	defer func() {
+		if cmd.Process != nil {
+			// Using Kill because the process is expected to be unresponsive.
+			_ = cmd.Process.Kill()
+		}
+		// Wait is important to release resources. It will return an error because we killed it.
+		_ = cmd.Wait()
+	}()
+
+	var outputBuilder strings.Builder
+	var wg sync.WaitGroup
+	wg.Add(1)
+
+	// This goroutine reads the output and signals when the marker is found.
+	go func() {
+		defer wg.Done()
+		scanner := bufio.NewScanner(stdout)
+		for scanner.Scan() {
+			line := scanner.Text()
+			outputBuilder.WriteString(line + "\n")
+			if strings.Contains(line, successMarker) {
+				// Marker found, we can cancel the context to stop waiting.
+				cancel()
+				return
+			}
+		}
+	}()
+
+	// Wait until the context is done. This happens on timeout, parent context cancellation,
+	// or when we call cancel() inside the goroutine after finding the marker.
+	<-cmdCtx.Done()
+
+	// Wait for the reading goroutine to finish processing any remaining buffered output.
+	wg.Wait()
+
+	capturedOutput := outputBuilder.String()
+
+	// The primary success condition is finding the marker.
+	if strings.Contains(capturedOutput, successMarker) {
+		return capturedOutput, nil
+	}
+
+	// If the marker wasn't found, the operation failed. We can return the specific context error.
+	if cmdCtx.Err() == context.DeadlineExceeded {
+		return capturedOutput, fmt.Errorf("command timed out after %v without finding success marker '%s'", timeout, successMarker)
+	}
+
+	// Could be parent context cancellation or some other reason.
+	return capturedOutput, fmt.Errorf("command stopped without finding success marker: %w", cmdCtx.Err())
+}
+
+// CheckClaudeCli checks for the Claude CLI and its authentication status.
+func (a *App) CheckClaudeCli() (map[string]string, error) {
+	var claudePath string
+	var err error
+
+	// On Windows, we need to check inside WSL.
+	if goruntime.GOOS == "windows" {
+		cmd := exec.CommandContext(a.ctx, "wsl", "which", "claude")
+		out, errWhich := cmd.Output()
+		if errWhich != nil {
+			if _, ok := errWhich.(*exec.ExitError); ok {
+				runtime.LogInfof(a.ctx, "claude CLI not found in WSL PATH")
+				return map[string]string{"status": "not_installed"}, nil
+			}
+			runtime.LogErrorf(a.ctx, "Error checking for claude CLI in WSL: %v", errWhich)
+			return nil, fmt.Errorf("error running wsl command: %w", errWhich)
+		}
+		claudePath = strings.TrimSpace(string(out))
+	} else {
+		// For macOS and Linux
+		claudePath, err = exec.LookPath("claude")
+		if err != nil {
+			runtime.LogInfof(a.ctx, "claude CLI not found in PATH: %v", err)
+			return map[string]string{"status": "not_installed"}, nil
+		}
+	}
+
+	runtime.LogInfof(a.ctx, "Found claude at: %s. Checking for saved OAuth token...", claudePath)
+
+	if a.settings.ClaudeOauthToken != "" {
+		runtime.LogInfo(a.ctx, "Claude OAuth token found in settings.")
+		runtime.EventsEmit(a.ctx, "backendLog", map[string]string{
+			"message": "Claude auth check completed. Status: installed_and_authed (token found in settings)",
+			"type":    "success",
+		})
+		return map[string]string{
+			"status": "installed_and_authed",
+			"path":   claudePath,
+		}, nil
+	}
+
+	runtime.LogInfo(a.ctx, "Claude OAuth token not found in settings.")
+	runtime.EventsEmit(a.ctx, "backendLog", map[string]string{
+		"message": "Claude auth check completed. Status: installed_not_authed (no token in settings)",
+		"type":    "warn",
+	})
+	return map[string]string{
+		"status": "installed_not_authed",
+		"path":   claudePath,
+	}, nil
+}
+
+// AuthorizeClaudeCli starts the 'claude setup-token' process to capture the OAuth token.
+func (a *App) AuthorizeClaudeCli(projectRoot string) error {
+	runtime.LogInfof(a.ctx, "Starting Claude CLI authorization process for project: %s", projectRoot)
+
+	go func() {
+		// Timeout for the whole operation
+		ctx, cancel := context.WithTimeout(a.ctx, 5*time.Minute)
+		defer cancel()
+
+		var cmd *exec.Cmd
+		var command string
+		var args []string
+
+		if goruntime.GOOS == "windows" {
+			wslPath, err := toWSLPath(projectRoot)
+			if err != nil {
+				errMsg := fmt.Sprintf("failed to convert project root to WSL path: %v", err)
+				runtime.LogError(a.ctx, errMsg)
+				runtime.EventsEmit(a.ctx, "claudeAuthFailed", errMsg)
+				return
+			}
+			// We need to find the claude path within WSL first
+			claudePathCmd := exec.CommandContext(ctx, "wsl", "which", "claude")
+			claudePathBytes, err := claudePathCmd.Output()
+			if err != nil {
+				errMsg := fmt.Sprintf("could not find 'claude' executable in WSL: %v", err)
+				runtime.LogError(a.ctx, errMsg)
+				runtime.EventsEmit(a.ctx, "claudeAuthFailed", errMsg)
+				return
+			}
+			claudePath := strings.TrimSpace(string(claudePathBytes))
+			command = "wsl"
+			args = []string{"--cd", wslPath, claudePath, "setup-token"}
+		} else {
+			claudePath, err := exec.LookPath("claude")
+			if err != nil {
+				errMsg := fmt.Sprintf("could not find 'claude' executable in PATH: %v", err)
+				runtime.LogError(a.ctx, errMsg)
+				runtime.EventsEmit(a.ctx, "claudeAuthFailed", errMsg)
+				return
+			}
+			command = claudePath
+			args = []string{"setup-token"}
+		}
+
+		cmd = exec.CommandContext(ctx, command, args...)
+		if goruntime.GOOS != "windows" {
+			cmd.Dir = projectRoot
+		}
+
+		stdout, err := cmd.StdoutPipe()
+		if err != nil {
+			errMsg := fmt.Sprintf("failed to create stdout pipe for claude setup-token: %v", err)
+			runtime.LogError(a.ctx, errMsg)
+			runtime.EventsEmit(a.ctx, "claudeAuthFailed", errMsg)
+			return
+		}
+		cmd.Stderr = cmd.Stdout // Combine stdout and stderr
+
+		if err := cmd.Start(); err != nil {
+			errMsg := fmt.Sprintf("failed to start 'claude setup-token': %v", err)
+			runtime.LogError(a.ctx, errMsg)
+			runtime.EventsEmit(a.ctx, "claudeAuthFailed", errMsg)
+			return
+		}
+
+		// Ensure process is killed on exit
+		defer func() {
+			if cmd.Process != nil {
+				_ = cmd.Process.Kill()
+			}
+			_ = cmd.Wait()
+		}()
+
+		scanner := bufio.NewScanner(stdout)
+		tokenFound := false
+		var outputLog strings.Builder
+
+		// Regex to find the token. The token is expected on a line by itself after the prompt.
+		tokenRegex := regexp.MustCompile(`(csk-oath-\w+)`)
+		for scanner.Scan() {
+			line := scanner.Text()
+			outputLog.WriteString(line + "\n")
+			runtime.LogDebugf(a.ctx, "[claude setup-token]: %s", line)
+
+			matches := tokenRegex.FindStringSubmatch(line)
+			if len(matches) > 1 {
+				token := matches[1]
+				a.settings.ClaudeOauthToken = token
+				if err := a.saveSettings(); err != nil {
+					errMsg := fmt.Sprintf("failed to save claude oauth token: %v", err)
+					runtime.LogError(a.ctx, errMsg)
+					runtime.EventsEmit(a.ctx, "claudeAuthFailed", errMsg)
+					return // Exit goroutine
+				}
+				runtime.LogInfo(a.ctx, "Successfully captured and saved Claude OAuth token.")
+				runtime.EventsEmit(a.ctx, "claudeAuthSuccess")
+				tokenFound = true
+				break // Exit the loop
+			}
+		}
+
+		if !tokenFound {
+			var errMsg string
+			if ctx.Err() == context.DeadlineExceeded {
+				errMsg = "claude setup-token timed out after 5 minutes"
+			} else {
+				errMsg = "claude setup-token process finished without providing a token"
+			}
+			runtime.LogError(a.ctx, errMsg)
+			runtime.LogDebugf(a.ctx, "Full output from failed claude setup-token:\n%s", outputLog.String())
+			runtime.EventsEmit(a.ctx, "claudeAuthFailed", errMsg)
+		}
+	}()
+
+	return nil
+}
+
 func (a *App) CheckCodexCli() (map[string]string, error) {
 	// On Windows, we need to check inside WSL.
 	if goruntime.GOOS == "windows" {
+		runtime.EventsEmit(a.ctx, "backendLog", map[string]string{
+			"message": "Checking for 'codex' in WSL PATH...",
+			"type":    "info",
+		})
 		// Check for codex in PATH (within WSL)
 		cmd := exec.CommandContext(a.ctx, "wsl", "which", "codex")
 		out, err := cmd.Output()
@@ -1140,6 +1390,10 @@ func (a *App) CheckCodexCli() (map[string]string, error) {
 
 		// Check for config.toml to determine auth status
 		configPath := "~/.codex/config.toml"
+		runtime.EventsEmit(a.ctx, "backendLog", map[string]string{
+			"message": "Checking for config file at " + configPath + " in WSL...",
+			"type":    "info",
+		})
 		testCmd := exec.CommandContext(a.ctx, "wsl", "test", "-f", configPath)
 		if testErr := testCmd.Run(); testErr == nil {
 			// Config file exists - assume authenticated
@@ -1157,6 +1411,10 @@ func (a *App) CheckCodexCli() (map[string]string, error) {
 	}
 
 	// For macOS and Linux: check for codex in PATH
+	runtime.EventsEmit(a.ctx, "backendLog", map[string]string{
+		"message": "Checking for 'codex' in PATH...",
+		"type":    "info",
+	})
 	codexPath, err := exec.LookPath("codex")
 	if err != nil {
 		runtime.LogInfof(a.ctx, "codex CLI not found in PATH: %v", err)
@@ -1172,6 +1430,10 @@ func (a *App) CheckCodexCli() (map[string]string, error) {
 	}
 
 	configPath := filepath.Join(homeDir, ".codex", "config.toml")
+	runtime.EventsEmit(a.ctx, "backendLog", map[string]string{
+		"message": "Checking for config file at " + configPath,
+		"type":    "info",
+	})
 	if _, err := os.Stat(configPath); err == nil {
 		// Config file exists - assume authenticated
 		return map[string]string{
@@ -1202,10 +1464,19 @@ func (a *App) InstallCodexCli() error {
 		cmd = exec.CommandContext(a.ctx, "npm", "install", "-g", "@openai/codex")
 	}
 
+	runtime.EventsEmit(a.ctx, "backendLog", map[string]string{
+		"message": "Executing command: " + cmd.String(),
+		"type":    "info",
+	})
+
 	// Capture output for logging and error reporting
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		runtime.LogErrorf(a.ctx, "npm install failed. Output:\n%s\nError: %v", string(output), err)
+		runtime.EventsEmit(a.ctx, "backendLog", map[string]string{
+			"message": "npm install failed. Full output:\n" + string(output),
+			"type":    "error",
+		})
 		return fmt.Errorf("npm install failed: %w. Output: %s", err, string(output))
 	}
 
@@ -1257,10 +1528,16 @@ func (a *App) AuthorizeCodexCli() error {
 		return fmt.Errorf("unsupported operating system: %s", goruntime.GOOS)
 	}
 
+	runtime.LogInfof(a.ctx, "Opening terminal with command: %s", cmd.String())
+	runtime.EventsEmit(a.ctx, "backendLog", map[string]string{
+		"message": "Opening terminal with command: " + cmd.String(),
+		"type":    "info",
+	})
+
 	// Start the command (non-blocking)
 	err := cmd.Start()
 	if err != nil {
-		runtime.LogErrorf(a.ctx, "Failed to open terminal for authorization: %v", err)
+		runtime.LogErrorf(a.ctx, "Failed to open terminal for Codex authorization: %v", err)
 		return fmt.Errorf("failed to open terminal: %w", err)
 	}
 
@@ -1284,11 +1561,8 @@ func (a *App) ExecuteCodexCli(prompt string, projectRoot string, codexPath strin
 		}
 		runtime.LogInfof(a.ctx, "Converted project root to WSL path: %s", wslProjectRoot)
 
-		// Execute: wsl codex exec "<prompt>"
-		cmd = exec.CommandContext(a.ctx, "wsl", codexPath, "exec", prompt)
-		// Set working directory to WSL path
-		cmd.Dir = wslProjectRoot
-
+		// Execute: wsl --cd <dir> codex exec "<prompt>"
+		cmd = exec.CommandContext(a.ctx, "wsl", "--cd", wslProjectRoot, codexPath, "exec", prompt)
 	} else {
 		// For macOS and Linux, execute directly: codex exec "<prompt>"
 		cmd = exec.CommandContext(a.ctx, codexPath, "exec", prompt)
@@ -1297,14 +1571,73 @@ func (a *App) ExecuteCodexCli(prompt string, projectRoot string, codexPath strin
 	}
 
 	runtime.LogInfof(a.ctx, "Running command: %s in directory: %s", cmd.String(), cmd.Dir)
+	runtime.EventsEmit(a.ctx, "backendLog", map[string]string{
+		"message": "Executing command: " + cmd.String(),
+		"type":    "info",
+	})
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		runtime.LogErrorf(a.ctx, "Codex CLI execution failed. Error: %v. Output: %s", err, string(output))
+		runtime.EventsEmit(a.ctx, "backendLog", map[string]string{
+			"message": "Codex CLI execution failed. Full output:\n" + string(output),
+			"type":    "error",
+		})
 		return "", fmt.Errorf("codex cli execution failed: %w. Output: %s", err, string(output))
 	}
 
 	runtime.LogInfof(a.ctx, "Codex CLI execution successful. Output length: %d", len(output))
+	return string(output), nil
+}
+
+// ExecuteClaudeCli runs the claude CLI tool with the given prompt in the specified project directory.
+func (a *App) ExecuteClaudeCli(prompt string, projectRoot string, claudePath string) (string, error) {
+	runtime.LogInfof(a.ctx, "Executing Claude CLI: %s for project: %s", claudePath, projectRoot)
+
+	var cmd *exec.Cmd
+
+	if goruntime.GOOS == "windows" {
+		wslProjectRoot, err := toWSLPath(projectRoot)
+		if err != nil {
+			runtime.LogErrorf(a.ctx, "Failed to convert project root to WSL path: %v", err)
+			return "", fmt.Errorf("failed to convert project root to WSL path: %w", err)
+		}
+		runtime.LogInfof(a.ctx, "Converted project root to WSL path: %s", wslProjectRoot)
+
+		// Execute: wsl --cd <dir> claude -p "<prompt>"
+		cmd = exec.CommandContext(a.ctx, "wsl", "--cd", wslProjectRoot, claudePath, "-p", prompt)
+
+	} else {
+		// For macOS and Linux, execute directly
+		cmd = exec.CommandContext(a.ctx, claudePath, "-p", prompt)
+		cmd.Dir = projectRoot
+	}
+
+	if a.settings.ClaudeOauthToken != "" {
+		envVar := fmt.Sprintf("CLAUDE_CODE_OAUTH_TOKEN=%s", a.settings.ClaudeOauthToken)
+		cmd.Env = append(os.Environ(), envVar)
+		runtime.LogInfo(a.ctx, "Executing Claude CLI with OAuth token.")
+	} else {
+		runtime.LogWarning(a.ctx, "Executing Claude CLI without OAuth token.")
+	}
+
+	runtime.LogInfof(a.ctx, "Running command: %s in directory: %s", cmd.String(), cmd.Dir)
+	runtime.EventsEmit(a.ctx, "backendLog", map[string]string{
+		"message": "Executing command: " + cmd.String(),
+		"type":    "info",
+	})
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		runtime.LogErrorf(a.ctx, "Claude CLI execution failed. Error: %v. Output: %s", err, string(output))
+		runtime.EventsEmit(a.ctx, "backendLog", map[string]string{
+			"message": "Claude CLI execution failed. Full output:\n" + string(output),
+			"type":    "error",
+		})
+		return "", fmt.Errorf("claude cli execution failed: %w. Output: %s", err, string(output))
+	}
+
+	runtime.LogInfof(a.ctx, "Claude CLI execution successful. Output length: %d", len(output))
 	return string(output), nil
 }
 

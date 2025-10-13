@@ -33,6 +33,8 @@
                     @update-composed-prompt="handleComposedPromptUpdate"
                     @update:user-task="handleUserTaskUpdate"
                     @update:rules-content="handleRulesContentUpdate"
+                    @update:final-prompt="finalPrompt = $event"
+                    @add-log="({message, type}) => addLog(message, type)"
                     ref="centralPanelRef" />
     </div>
     <div 
@@ -114,6 +116,7 @@ let debounceTimer = null;
 // Watcher related
 const projectFilesChangedPendingReload = ref(false);
 let unlistenProjectFilesChanged = null;
+let unlistenBackendLog = null;
 
 async function selectProjectFolderHandler() {
   isFileTreeLoading.value = true;
@@ -126,7 +129,13 @@ async function selectProjectFolderHandler() {
       loadingError.value = '';
       manuallyToggledNodes.clear();
       fileTree.value = [];
-      
+
+      // Reset prompt-related state for the new project
+      userTask.value = '';
+      rulesContent.value = ''; // Will be re-fetched in Step 2
+      finalPrompt.value = '';
+      composedLlmPrompt.value = '';
+
       await loadFileTree(selectedDir);
 
 
@@ -366,6 +375,13 @@ function navigateToStep(stepId) {
   const targetStep = steps.value.find(s => s.id === stepId);
   if (!targetStep) return;
 
+  // Special case: Allow jumping from a completed Step 1 to Step 4 for expert users.
+  const step1 = steps.value.find(s => s.id === 1);
+  if (stepId === 4 && step1 && step1.completed) {
+    currentStep.value = stepId;
+    return;
+  }
+
   if (targetStep.completed || stepId === currentStep.value) {
     currentStep.value = stepId;
     return;
@@ -529,6 +545,10 @@ onMounted(() => {
       // debouncedTriggerShotgunContextGeneration will be called by the watcher on fileTree if projectRoot is set
     }
   });
+
+  unlistenBackendLog = EventsOn("backendLog", (log) => {
+    addLog(log.message, log.type);
+  });
 });
 
 onBeforeUnmount(async () => {
@@ -541,6 +561,9 @@ onBeforeUnmount(async () => {
   }
   if (unlistenProjectFilesChanged) {
     unlistenProjectFilesChanged();
+  }
+  if (unlistenBackendLog) {
+    unlistenBackendLog();
   }
   // Remember to unlisten other events if they return unlistener functions
 });
@@ -572,6 +595,7 @@ watch(projectRoot, async (newRoot, oldRoot) => {
     shotgunPromptContext.value = '';
     loadingError.value = '';
     manuallyToggledNodes.clear();
+    finalPrompt.value = '';
     isGeneratingContext.value = false; // Reset generation state
     projectFilesChangedPendingReload.value = false; // Reset pending reload
   }

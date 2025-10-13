@@ -3,11 +3,11 @@
     <div class="flex items-start space-x-3">
       <textarea
         v-model="currentUserMessage"
-        @keydown.enter.prevent="handleSendMessage"
+        @keydown.enter.shift.prevent="handleSendMessage"
         :disabled="props.isLoading"
         rows="2"
         class="flex-grow p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 text-sm"
-        placeholder="Type your message..."
+        placeholder="Введите сообщение... (Shift+Enter для отправки)"
       ></textarea>
       <button
         @click="handleSendMessage"

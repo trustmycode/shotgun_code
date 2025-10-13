@@ -153,6 +153,7 @@ function handleCancelCustomRules() {
 }
 
 function canNavigateToStep(stepId) {
+  if (stepId === 4 && props.steps[0].completed) return true;
   if (stepId === props.currentStep) return true;
   const targetStep = props.steps.find(s => s.id === stepId);
   if (targetStep && targetStep.completed) return true;
