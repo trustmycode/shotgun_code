@@ -1641,6 +1641,160 @@ func (a *App) ExecuteClaudeCli(prompt string, projectRoot string, claudePath str
 	return string(output), nil
 }
 
+// CheckGeminiCli checks for the gcloud CLI, gemini component, and its authentication status.
+func (a *App) CheckGeminiCli() (map[string]string, error) {
+	var gcloudPath string
+	var err error
+	var cmd *exec.Cmd
+
+	// On Windows, we need to check inside WSL.
+	if goruntime.GOOS == "windows" {
+		wslCmd := exec.CommandContext(a.ctx, "wsl", "which", "gcloud")
+		out, errWhich := wslCmd.Output()
+		if errWhich != nil {
+			if _, ok := errWhich.(*exec.ExitError); ok {
+				runtime.LogInfof(a.ctx, "gcloud CLI not found in WSL PATH")
+				return map[string]string{"status": "not_installed"}, nil
+			}
+			runtime.LogErrorf(a.ctx, "Error checking for gcloud CLI in WSL: %v", errWhich)
+			return nil, fmt.Errorf("error running wsl command: %w", errWhich)
+		}
+		gcloudPath = strings.TrimSpace(string(out))
+	} else {
+		// For macOS and Linux
+		gcloudPath, err = exec.LookPath("gcloud")
+		if err != nil {
+			runtime.LogInfof(a.ctx, "gcloud CLI not found in PATH: %v", err)
+			return map[string]string{"status": "not_installed"}, nil
+		}
+	}
+
+	runtime.LogInfof(a.ctx, "Found gcloud at: %s. Checking for gemini component...", gcloudPath)
+
+	// Check if gemini component is installed
+	if goruntime.GOOS == "windows" {
+		cmd = exec.CommandContext(a.ctx, "wsl", gcloudPath, "components", "list", "--filter=id:gemini", "--format=value(state.name)")
+	} else {
+		cmd = exec.CommandContext(a.ctx, gcloudPath, "components", "list", "--filter=id:gemini", "--format=value(state.name)")
+	}
+
+	out, err := cmd.Output()
+	if err != nil {
+		runtime.LogErrorf(a.ctx, "Error checking for gcloud gemini component: %v", err)
+		// This might fail if gcloud is not configured, which is an auth issue. Let's assume not installed for simplicity.
+		return map[string]string{"status": "not_installed", "error": "Failed to check for gemini component. Ensure gcloud is configured."}, nil
+	}
+
+	if !strings.Contains(strings.ToLower(string(out)), "installed") {
+		runtime.LogInfof(a.ctx, "gcloud gemini component is not installed. Output: %s", string(out))
+		return map[string]string{"status": "not_installed"}, nil
+	}
+
+	runtime.LogInfo(a.ctx, "gcloud gemini component is installed. Checking for ADC...")
+
+	// Check for Application Default Credentials (ADC)
+	if goruntime.GOOS == "windows" {
+		// Inside WSL, home is just ~
+		cmd = exec.CommandContext(a.ctx, "wsl", "test", "-f", "~/.config/gcloud/application_default_credentials.json")
+		err = cmd.Run()
+	} else {
+		homeDir, errHome := os.UserHomeDir()
+		if errHome != nil {
+			return nil, fmt.Errorf("could not get user home directory: %w", errHome)
+		}
+		adcPath := filepath.Join(homeDir, ".config", "gcloud", "application_default_credentials.json")
+		_, err = os.Stat(adcPath)
+	}
+
+	if err == nil {
+		// ADC file exists, assume authenticated
+		runtime.LogInfo(a.ctx, "gcloud ADC file found. Assuming authenticated.")
+		return map[string]string{
+			"status": "installed_and_authed",
+			"path":   gcloudPath,
+		}, nil
+	}
+
+	runtime.LogInfo(a.ctx, "gcloud ADC file not found. Assuming not authenticated.")
+	return map[string]string{
+		"status": "installed_not_authed",
+		"path":   gcloudPath,
+	}, nil
+}
+
+// AuthorizeGeminiCli opens a new terminal window and runs 'gcloud auth application-default login'.
+func (a *App) AuthorizeGeminiCli() error {
+	runtime.LogInfo(a.ctx, "Opening new terminal for Gemini CLI (gcloud) authentication...")
+
+	var cmd *exec.Cmd
+	authCommand := "gcloud auth application-default login"
+
+	switch goruntime.GOOS {
+	case "windows":
+		runtime.LogInfo(a.ctx, "Opening new cmd window on Windows for WSL gcloud auth")
+		cmd = exec.CommandContext(a.ctx, "cmd", "/c", "start", "cmd", "/k", "wsl "+authCommand)
+	case "darwin":
+		runtime.LogInfo(a.ctx, "Opening new Terminal window on macOS via osascript")
+		script := fmt.Sprintf(`tell app "Terminal" to do script "%s"`, authCommand)
+		cmd = exec.CommandContext(a.ctx, "osascript", "-e", script)
+	case "linux":
+		runtime.LogInfo(a.ctx, "Opening new terminal window on Linux")
+		if _, err := exec.LookPath("gnome-terminal"); err == nil {
+			cmd = exec.CommandContext(a.ctx, "gnome-terminal", "--", "bash", "-c", authCommand)
+		} else if _, err := exec.LookPath("konsole"); err == nil {
+			cmd = exec.CommandContext(a.ctx, "konsole", "-e", "bash", "-c", authCommand)
+		} else if _, err := exec.LookPath("xfce4-terminal"); err == nil {
+			cmd = exec.CommandContext(a.ctx, "xfce4-terminal", "--command", "bash -c '"+authCommand+"'")
+		} else if _, err := exec.LookPath("xterm"); err == nil {
+			cmd = exec.CommandContext(a.ctx, "xterm", "-e", "bash -c '"+authCommand+"'")
+		} else {
+			return fmt.Errorf("no supported terminal emulator found")
+		}
+	default:
+		return fmt.Errorf("unsupported operating system: %s", goruntime.GOOS)
+	}
+
+	runtime.LogInfof(a.ctx, "Opening terminal with command: %s", cmd.String())
+	err := cmd.Start()
+	if err != nil {
+		runtime.LogErrorf(a.ctx, "Failed to open terminal for gcloud authorization: %v", err)
+		return fmt.Errorf("failed to open terminal: %w", err)
+	}
+
+	runtime.LogInfo(a.ctx, "Terminal opened successfully for gcloud CLI authentication")
+	return nil
+}
+
+// ExecuteGeminiCli runs the gcloud gemini CLI tool with the given prompt.
+func (a *App) ExecuteGeminiCli(prompt string, projectRoot string, gcloudPath string) (string, error) {
+	runtime.LogInfof(a.ctx, "Executing Gemini CLI (gcloud): %s for project: %s", gcloudPath, projectRoot)
+
+	var cmd *exec.Cmd
+
+	if goruntime.GOOS == "windows" {
+		wslProjectRoot, err := toWSLPath(projectRoot)
+		if err != nil {
+			return "", fmt.Errorf("failed to convert project root to WSL path: %w", err)
+		}
+		cmd = exec.CommandContext(a.ctx, "wsl", "--cd", wslProjectRoot, gcloudPath, "alpha", "gemini", "chat", "--stdin")
+	} else {
+		cmd = exec.CommandContext(a.ctx, gcloudPath, "alpha", "gemini", "chat", "--stdin")
+		cmd.Dir = projectRoot
+	}
+
+	cmd.Stdin = strings.NewReader(prompt)
+
+	runtime.LogInfof(a.ctx, "Running command: %s in directory: %s", cmd.String(), cmd.Dir)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		runtime.LogErrorf(a.ctx, "Gemini CLI execution failed. Error: %v. Output: %s", err, string(output))
+		return "", fmt.Errorf("gemini cli execution failed: %w. Output: %s", err, string(output))
+	}
+
+	runtime.LogInfof(a.ctx, "Gemini CLI execution successful. Output length: %d", len(output))
+	return string(output), nil
+}
+
 // toWSLPath converts a Windows path (e.g., C:\Users\Test) to a WSL path (e.g., /mnt/c/Users/Test).
 func toWSLPath(windowsPath string) (string, error) {
 	if len(windowsPath) < 2 || windowsPath[1] != ':' {

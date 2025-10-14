@@ -16,6 +16,12 @@
         >
           Claude
         </button>
+        <button
+          @click="selectedExecutor = 'gemini'"
+          :class="['px-4 py-1 text-sm font-medium rounded-md', selectedExecutor === 'gemini' ? 'bg-white text-blue-600 shadow' : 'text-gray-600 hover:bg-gray-300']"
+        >
+          Gemini
+        </button>
       </div>
     </div>
 
@@ -72,6 +78,21 @@
         </p>
         <button @click="checkCurrentCli" class="mt-4 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">I've installed it, check again</button>
       </div>
+      <!-- Gemini Not Installed -->
+      <div v-else-if="selectedExecutor === 'gemini'" class="p-6 border border-gray-300 bg-gray-50 rounded-lg shadow-sm max-w-md">
+        <h3 class="text-lg font-semibold text-gray-800 mb-2">Google Cloud CLI Not Found or Incomplete</h3>
+        <p class="text-gray-600 mb-4 text-sm">
+          To use Gemini, please install the Google Cloud CLI and the 'gemini' component.
+        </p>
+        <p class="text-xs text-gray-500 mt-3">
+          Follow the official installation guide:
+          <a href="https://cloud.google.com/sdk/docs/install" target="_blank" class="text-blue-600 hover:underline">https://cloud.google.com/sdk/docs/install</a>
+          <br><br>
+          Then, install the component:
+          <code class="block bg-white p-2 rounded mt-2 text-left">gcloud components install gemini</code>
+        </p>
+        <button @click="checkCurrentCli" class="mt-4 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">I've installed it, check again</button>
+      </div>
     </div>
 
     <!-- Installed but Not Authenticated State -->
@@ -87,11 +108,11 @@
           @click="authorizeCli"
           class="px-6 py-2 bg-yellow-600 text-white font-semibold rounded-md hover:bg-yellow-700 focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:ring-opacity-50 disabled:bg-gray-400 flex items-center mx-auto"
         >
-          {{ selectedExecutor === 'codex' ? 'Sign in with ChatGPT' : 'Authenticate via Browser' }}
+          {{ selectedExecutor === 'codex' ? 'Sign in with ChatGPT' : (selectedExecutor === 'claude' ? 'Authenticate via Browser' : 'Login with Google') }}
         </button>
         <p class="text-xs text-yellow-600 mt-3">
           Or authenticate manually:
-          <code class="block bg-white p-2 rounded mt-2 text-left">{{ selectedExecutor === 'codex' ? 'codex' : 'claude setup-token' }}</code>
+          <code class="block bg-white p-2 rounded mt-2 text-left">{{ selectedExecutor === 'codex' ? 'codex' : (selectedExecutor === 'claude' ? 'claude setup-token' : 'gcloud auth application-default login') }}</code>
         </p>
         <p class="text-xs text-yellow-600 mt-3 border-t border-yellow-200 pt-3">
           <b>Hint:</b> Check the console below for the full output from the CLI to help diagnose authentication issues.
@@ -101,8 +122,8 @@
 
     <!-- Waiting for Auth Confirmation State -->
     <div v-else-if="cliStatus === 'waiting_for_auth_confirmation'" class="flex-grow flex flex-col justify-center items-center text-center">
-      <!-- Codex waiting state -->
-      <div v-if="selectedExecutor === 'codex'" class="p-6 border border-blue-300 bg-blue-50 rounded-lg shadow-sm max-w-md">
+      <!-- Codex or Gemini waiting state -->
+      <div v-if="selectedExecutor === 'codex' || selectedExecutor === 'gemini'" class="p-6 border border-blue-300 bg-blue-50 rounded-lg shadow-sm max-w-md">
         <h3 class="text-lg font-semibold text-blue-800 mb-2">Terminal Opened for Authentication</h3>
         <p class="text-blue-700 mb-4 text-sm">
           A terminal window has been opened for you to complete the sign-in process.
@@ -115,7 +136,7 @@
           </button>
         <p class="text-xs text-blue-600 mt-3">
           If the terminal didn't open, run manually:
-          <code class="block bg-white p-2 rounded mt-2 text-left">{{ selectedExecutor === 'codex' ? 'codex' : 'claude' }}</code>
+          <code class="block bg-white p-2 rounded mt-2 text-left">{{ selectedExecutor === 'codex' ? 'codex' : 'gcloud auth application-default login' }}</code>
         </p>
       </div>
       <!-- Claude waiting state -->
@@ -182,7 +203,7 @@
 
 <script setup>
 import { ref, onMounted, onBeforeUnmount, computed } from 'vue';
-import { CheckCodexCli, InstallCodexCli, AuthorizeCodexCli, ExecuteCodexCli, CheckClaudeCli, AuthorizeClaudeCli, ExecuteClaudeCli } from '../../../wailsjs/go/main/App';
+import { CheckCodexCli, InstallCodexCli, AuthorizeCodexCli, ExecuteCodexCli, CheckClaudeCli, AuthorizeClaudeCli, ExecuteClaudeCli, CheckGeminiCli, AuthorizeGeminiCli, ExecuteGeminiCli } from '../../../wailsjs/go/main/App';
 import { LogError as LogErrorRuntime, LogInfo as LogInfoRuntime, EventsOn } from '../../../wailsjs/runtime/runtime';
 
 const props = defineProps({
@@ -193,10 +214,11 @@ const props = defineProps({
 
 const emit = defineEmits(['action', 'update:finalPrompt', 'add-log']);
 
-const selectedExecutor = ref('codex'); // 'codex' or 'claude'
+const selectedExecutor = ref('codex'); // 'codex', 'claude', or 'gemini'
 
 const codexState = ref({ status: 'checking', path: '', error: '' });
 const claudeState = ref({ status: 'checking', path: '', error: '' });
+const geminiState = ref({ status: 'checking', path: '', error: '' });
 
 // Shared state
 const isInstalling = ref(false); // Only for Codex
@@ -210,13 +232,19 @@ let unlistenClaudeAuthFailed;
 
 // Computed properties to drive the UI from the selected executor's state
 const currentExecutorState = computed(() => {
-  return selectedExecutor.value === 'codex' ? codexState.value : claudeState.value;
+  if (selectedExecutor.value === 'codex') return codexState.value;
+  if (selectedExecutor.value === 'claude') return claudeState.value;
+  return geminiState.value;
 });
 
 const cliStatus = computed(() => currentExecutorState.value.status);
 const cliPath = computed(() => currentExecutorState.value.path);
 const cliError = computed(() => currentExecutorState.value.error);
-const executorName = computed(() => selectedExecutor.value === 'codex' ? 'Codex' : 'Claude');
+const executorName = computed(() => {
+  if (selectedExecutor.value === 'codex') return 'Codex';
+  if (selectedExecutor.value === 'claude') return 'Claude';
+  return 'Gemini';
+});
 
 const isWslError = computed(() => {
   return props.platform === 'windows' && cliError.value.toLowerCase().includes('wsl');
@@ -254,6 +282,22 @@ async function checkClaude() {
   }
 }
 
+async function checkGemini() {
+  geminiState.value = { status: 'checking', path: '', error: '' };
+  try {
+    const result = await CheckGeminiCli();
+    geminiState.value.status = result.status;
+    if (result.path) {
+      geminiState.value.path = result.path;
+    }
+    LogInfoRuntime(`Gemini CLI status: ${result.status}`);
+  } catch (err) {
+    geminiState.value.status = 'error';
+    geminiState.value.error = err.message || String(err);
+    LogErrorRuntime(`Error checking for Gemini CLI: ${geminiState.value.error}`);
+  }
+}
+
 function handleClaudeAuthSuccess() {
   emit('add-log', { message: 'Claude authentication successful! Refreshing status.', type: 'success' });
   checkClaude();
@@ -269,8 +313,10 @@ function handleClaudeAuthFailed(errorMsg) {
 function checkCurrentCli() {
   if (selectedExecutor.value === 'codex') {
     checkCodex();
-  } else {
+  } else if (selectedExecutor.value === 'claude') {
     checkClaude();
+  } else {
+    checkGemini();
   }
 }
 
@@ -300,7 +346,7 @@ async function authorizeCli() {
     if (selectedExecutor.value === 'codex') {
       await AuthorizeCodexCli();
       LogInfoRuntime('Terminal opened for Codex CLI authorization.');
-    } else {
+    } else if (selectedExecutor.value === 'claude') {
       if (!props.projectRoot) {
         const msg = 'Project root is not selected. Please select a project on Step 1.';
         alert(msg);
@@ -309,6 +355,9 @@ async function authorizeCli() {
       }
       await AuthorizeClaudeCli(props.projectRoot);
       LogInfoRuntime('Authorization process for Claude CLI started.');
+    } else if (selectedExecutor.value === 'gemini') {
+      await AuthorizeGeminiCli();
+      LogInfoRuntime('Terminal opened for Gemini CLI (gcloud) authorization.');
     }
     // Transition to waiting state
     currentExecutorState.value.status = 'waiting_for_auth_confirmation';
@@ -331,11 +380,16 @@ async function checkAuthStatus() {
       codexState.value.status = result.status;
       if (result.path) codexState.value.path = result.path;
       LogInfoRuntime(`Codex auth check status: ${result.status}`);
-    } else {
+    } else if (selectedExecutor.value === 'claude') {
       result = await CheckClaudeCli();
       claudeState.value.status = result.status;
       if (result.path) claudeState.value.path = result.path;
       LogInfoRuntime(`Claude auth check status: ${result.status}`);
+    } else {
+      result = await CheckGeminiCli();
+      geminiState.value.status = result.status;
+      if (result.path) geminiState.value.path = result.path;
+      LogInfoRuntime(`Gemini auth check status: ${result.status}`);
     }
     emit('add-log', { message: `Check complete. New status: ${result.status}`, type: 'success' });
   } catch (err) {
@@ -362,9 +416,12 @@ async function executeCli() {
     if (selectedExecutor.value === 'codex') {
       output = await ExecuteCodexCli(props.finalPrompt, props.projectRoot, cliPath.value);
       LogInfoRuntime('Codex CLI execution successful.');
-    } else {
+    } else if (selectedExecutor.value === 'claude') {
       output = await ExecuteClaudeCli(props.finalPrompt, props.projectRoot, cliPath.value);
       LogInfoRuntime('Claude CLI execution successful.');
+    } else {
+      output = await ExecuteGeminiCli(props.finalPrompt, props.projectRoot, cliPath.value);
+      LogInfoRuntime('Gemini CLI execution successful.');
     }
     executionOutput.value = output;
     emit('action', 'cliExecutionSuccess');
@@ -379,6 +436,7 @@ async function executeCli() {
 onMounted(() => {
   checkCodex();
   checkClaude();
+  checkGemini();
   unlistenClaudeAuthSuccess = EventsOn('claudeAuthSuccess', handleClaudeAuthSuccess);
   unlistenClaudeAuthFailed = EventsOn('claudeAuthFailed', handleClaudeAuthFailed);
 });

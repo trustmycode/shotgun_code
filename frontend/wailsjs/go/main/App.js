@@ -14,12 +14,20 @@ export function AuthorizeCodexCli() {
   return window['go']['main']['App']['AuthorizeCodexCli']();
 }
 
+export function AuthorizeGeminiCli() {
+  return window['go']['main']['App']['AuthorizeGeminiCli']();
+}
+
 export function CheckClaudeCli() {
   return window['go']['main']['App']['CheckClaudeCli']();
 }
 
 export function CheckCodexCli() {
   return window['go']['main']['App']['CheckCodexCli']();
+}
+
+export function CheckGeminiCli() {
+  return window['go']['main']['App']['CheckGeminiCli']();
 }
 
 export function CommunicateWithGoogleAI(arg1) {
@@ -32,6 +40,10 @@ export function ExecuteClaudeCli(arg1, arg2, arg3) {
 
 export function ExecuteCodexCli(arg1, arg2, arg3) {
   return window['go']['main']['App']['ExecuteCodexCli'](arg1, arg2, arg3);
+}
+
+export function ExecuteGeminiCli(arg1, arg2, arg3) {
+  return window['go']['main']['App']['ExecuteGeminiCli'](arg1, arg2, arg3);
 }
 
 export function GetCustomIgnoreRules() {
