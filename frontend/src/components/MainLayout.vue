@@ -256,9 +256,10 @@ function collectIgnoredPathsOnly(nodes, target) {
     const ignoredByRules = ignoredByGit || ignoredByCustom;
 
     if (ignoredByRules && node.relPath) {
+      // For auto-context, we exclude whole branches based on the root ignored node.
+      // Children may still be present in the UI tree (e.g. inside gitignored folders),
+      // but for the auto-context tree it's enough to mark only the root path here.
       target.push(node.relPath);
-      // Children of ignored directories are not present in the tree,
-      // so we don't need to recurse in the ignored branch.
       return;
     }
 
