@@ -3,6 +3,13 @@ package provider
 import "fmt"
 
 var openAIModelCatalog = []ModelInfo{
+	// GPT-5 family (latest reasoning-capable models)
+	{Name: "gpt-5.1", Description: "Latest GPT-5.1 flagship for complex reasoning and coding tasks"},
+	{Name: "gpt-5", Description: "Previous GPT-5 flagship reasoning model"},
+	{Name: "gpt-5-mini", Description: "Cost-optimized GPT-5 mini model"},
+	{Name: "gpt-5-nano", Description: "High-throughput GPT-5 nano model"},
+
+	// GPT-4 family
 	{Name: "gpt-4o-mini", Description: "Latest GPT-4o mini for general reasoning"},
 	{Name: "gpt-4.1-mini", Description: "GPT-4.1 mini tier"},
 	{Name: "o4-mini", Description: "Reasoning optimized 04-mini"},
@@ -12,6 +19,7 @@ var openAIModelCatalog = []ModelInfo{
 
 var openRouterModelCatalog = []ModelInfo{
 	{Name: "openrouter/auto", Description: "Router automatically selects the best model"},
+	{Name: "openrouter/gpt-5", Description: "GPT-5 family routed via OpenRouter"},
 	{Name: "anthropic/claude-3.5-sonnet", Description: "Claude 3.5 Sonnet via OpenRouter"},
 	{Name: "google/gemini-pro-1.5", Description: "Gemini Pro 1.5 proxied through OpenRouter"},
 	{Name: "openai/gpt-4o-mini", Description: "GPT-4o mini from OpenRouter catalog"},

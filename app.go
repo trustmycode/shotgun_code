@@ -363,6 +363,7 @@ func (a *App) RequestAutoContextSelection(rootDir string, excludedPaths []string
 		return nil, errors.New("no active LLM configuration found")
 	}
 
+	// Prepare excluded paths map
 	excludedMap := make(map[string]bool)
 	for _, p := range excludedPaths {
 		excludedMap[normalizeRelativePath(p)] = true
@@ -375,6 +376,7 @@ func (a *App) RequestAutoContextSelection(rootDir string, excludedPaths []string
 	}
 
 	task := strings.TrimSpace(userTask)
+	// Build LLM prompt for auto-context selection
 	prompt, err := a.autoContextService.BuildPrompt(tree, task, "")
 	if err != nil {
 		a.emitAutoContextError(fmt.Sprintf("failed to render auto-context prompt: %v", err))
@@ -388,7 +390,29 @@ func (a *App) RequestAutoContextSelection(rootDir string, excludedPaths []string
 		return nil, err
 	}
 
+	// Execute LLM call
 	raw, err := providerInstance.Generate(a.ctx, prompt)
+
+	// Log to shared prompt history for diagnostics (Step 3 view).
+	if a.historyManager != nil {
+		historyLabel := "AUTO CONTEXT"
+		if task != "" {
+			const maxLabelRunes = 80
+			runes := []rune(task)
+			if len(runes) > maxLabelRunes {
+				historyLabel = "AUTO CONTEXT: " + string(runes[:maxLabelRunes]) + "…"
+			} else {
+				historyLabel = "AUTO CONTEXT: " + task
+			}
+		}
+
+		responseForHistory := raw
+		if err != nil {
+			responseForHistory = fmt.Sprintf("ERROR during auto-context LLM call: %v", err)
+		}
+		a.historyManager.AddItem(historyLabel, prompt, responseForHistory)
+	}
+
 	if err != nil {
 		a.emitAutoContextError(fmt.Sprintf("provider error: %v", err))
 		return nil, err
