@@ -1,16 +1,15 @@
-name: Cross‑platform Build + Release — Shotgun Code
+name: Cross‑platform Build + Release — Shotgun Code
 
 on:
   workflow_dispatch:
 
 permissions:
-  contents: write        
+  contents: write
 
 env:
   NODE_OPTIONS: "--max-old-space-size=4096"
 
 jobs:
-# ───────────────────────── BUILD ─────────────────────────
   build:
     strategy:
       fail-fast: false
@@ -20,86 +19,110 @@ jobs:
           - os: ubuntu-latest
             platform: linux/amd64
             build_name: shotgun-code-linux-amd64
-            artifact_name: shotgun_code-linux-amd64
-            package: false
-            artifact_path: build/bin/shotgun-code-linux-amd64
+            # In Linux, Wails creates a binary without extension
+            output_path: build/bin/shotgun-code-linux-amd64
+            upload_path: build/bin/shotgun-code-linux-amd64
 
           # ────────── Windows ──────────
           - os: windows-latest
             platform: windows/amd64
             build_name: shotgun-code-windows-amd64.exe
-            artifact_name: shotgun_code-windows-amd64
-            package: false
-            artifact_path: build/bin/shotgun-code-windows-amd64.exe
+            output_path: build/bin/shotgun-code-windows-amd64.exe
+            upload_path: build/bin/shotgun-code-windows-amd64.exe
 
           # ─────────── macOS ───────────
           - os: macos-latest
             platform: darwin/arm64
-            build_name: shotgun-code                # .app
-            artifact_name: shotgun_code-darwin-arm64
-            package: true
-            artifact_path: build/bin/shotgun-code.app.zip
+            build_name: shotgun-code
+            # In macOS, Wails creates a .app folder
+            output_path: build/bin/shotgun-code.app
+            # We archive it manually to preserve permissions
+            upload_path: shotgun-code-darwin-arm64.zip
 
     runs-on: ${{ matrix.os }}
 
     steps:
-      - name: Checkout main branch
+      - name: Checkout code
         uses: actions/checkout@v4
         with:
-          ref: main
           submodules: recursive
 
-      - name: Build Wails app (${{ matrix.platform }})
-        uses: dAppServer/wails-build-action@main
+      # 1. Setup Go
+      - name: Setup Go
+        uses: actions/setup-go@v5
         with:
-          build-name:     ${{ matrix.build_name }}
-          build-platform: ${{ matrix.platform }}
-          go-version:     '1.24'
-          package:        ${{ matrix.package }}
+          go-version: '1.23' # Use stable version
+          check-latest: true
 
-      - name: Upload packaged artifact
+      # 2. Setup Node.js
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # 3. Install Wails CLI
+      - name: Install Wails CLI
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+
+      # 4. Install Linux dependencies (required for Linux build)
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev
+
+      # 5. Build application
+      - name: Build Wails App
+        run: |
+          wails build -platform ${{ matrix.platform }} -o ${{ matrix.build_name }} -clean
+
+      # 6. Special packaging for macOS (FIX for "App is damaged")
+      # Using ditto preserves resources and permissions better than regular zip
+      - name: Package macOS Application
+        if: runner.os == 'macOS'
+        run: |
+          # Change to build/bin directory so the archive root is immediately .app
+          cd build/bin
+          ditto -c -k --sequesterRsrc --keepParent shotgun-code.app ../../shotgun-code-darwin-arm64.zip
+
+      # 7. Upload artifacts
+      - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact_name }}
-          path: ${{ matrix.artifact_path }}
-          if-no-files-found: error   
+          name: shotgun_code-${{ matrix.platform == 'darwin/arm64' && 'darwin-arm64' || (matrix.platform == 'windows/amd64' && 'windows-amd64' || 'linux-amd64') }}
+          path: ${{ matrix.upload_path }}
+          if-no-files-found: error
 
-# ─────────────────────── RELEASE ────────────────────────
   release:
     needs: build
     runs-on: ubuntu-latest
-
     steps:
-      - name: Download release artifacts
+      - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
-          pattern: shotgun_code-*      
+          pattern: shotgun_code-*
           path: release-assets
-          fail_on_no_artifact: true
+          merge-multiple: true
 
-      - name: Prepare tag & release metadata
+      - name: Prepare Release Info
         id: prep
         run: |
           TAG="v$(date -u '+%Y.%m.%d')-${GITHUB_SHA::7}"
-          echo "tag_name=$TAG"            >> $GITHUB_OUTPUT
+          echo "tag_name=$TAG" >> $GITHUB_OUTPUT
           echo "release_name=Shotgun Code $TAG" >> $GITHUB_OUTPUT
 
-      - name: Create GitHub Release and upload assets
+      - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name:  ${{ steps.prep.outputs.tag_name }}
-          name:      ${{ steps.prep.outputs.release_name }}
+          tag_name: ${{ steps.prep.outputs.tag_name }}
+          name: ${{ steps.prep.outputs.release_name }}
           body: |
-            🔨 Automatic packaging от commit ${{ github.sha }}
-            Packages:
-            • Linux (amd64)  
-            • Windows (amd64)  
-            • macOS (Apple Silicon)  
-            Created with GitHub Actions.
-          draft: false
-          prerelease: false
-          
-          files: release-assets/**/*
-          fail_on_unmatched_files: true
+            🔨 Automatic build from commit ${{ github.sha }}
+            
+            **Assets:**
+            - macOS (Apple Silicon): Распакуйте zip и перетащите в Applications.
+            - Windows: .exe файл
+            - Linux: бинарный файл
+          files: release-assets/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
