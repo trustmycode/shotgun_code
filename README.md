@@ -1,6 +1,6 @@
 # Shotgun App
 
-![Shotgun App Banner](https://github.com/user-attachments/assets/435f5168-f4e6-4d2c-a91a-2343a5f935af)
+![Shotgun App Banner](https://github.com/user-attachments/assets/6dd15389-4ad9-493a-a0e7-9813eb143e38)
 
 **Tired of Cursor cutting off context, missing your files, and spitting out empty responses?**
 
