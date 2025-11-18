@@ -120,9 +120,9 @@ jobs:
             🔨 Automatic build from commit ${{ github.sha }}
             
             **Assets:**
-            - macOS (Apple Silicon): Распакуйте zip и перетащите в Applications.
-            - Windows: .exe файл
-            - Linux: бинарный файл
+            - macOS (Apple Silicon): Extract the zip and drag to Applications.
+            - Windows: .exe file
+            - Linux: binary file
           files: release-assets/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
