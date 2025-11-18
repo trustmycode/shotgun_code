@@ -16,9 +16,41 @@
     </div>
 
     <!-- Content Area (Textarea + Copy Button OR Error Message OR Placeholder) -->
-    <div v-else-if="projectRoot" class="mt-0 flex-grow flex flex-col">
+    <div v-else-if="projectRoot" class="mt-0 flex-grow flex flex-col space-y-4">
+      <div>
+        <label for="user-task-ai-step1" class="block text-sm font-medium text-gray-700 mb-1">Your task for AI:</label>
+        <textarea
+          id="user-task-ai-step1"
+          v-model="localUserTask"
+          rows="6"
+          class="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 text-sm"
+          placeholder="Describe what the AI should do..."
+        ></textarea>
+      </div>
+
       <div v-if="generatedContext && !generatedContext.startsWith('Error:')" class="flex-grow flex flex-col">
-        <h3 class="text-md font-medium text-gray-700 mb-2">Generated Project Context:</h3>
+        <div class="flex items-center justify-between mb-2">
+          <h3 class="text-md font-medium text-gray-700">Generated Project Context:</h3>
+          <div class="flex items-center space-x-2">
+            <button
+              class="px-3 py-1 text-xs border rounded-md"
+              :class="props.hasActiveLlmKey ? 'border-blue-500 text-blue-600 hover:bg-blue-50' : 'border-gray-300 text-gray-400 cursor-not-allowed'"
+              :disabled="!props.hasActiveLlmKey || props.isAutoContextLoading"
+              data-testid="auto-context-btn"
+              @click="emit('auto-context')"
+            >
+              {{ props.isAutoContextLoading ? 'Auto selecting…' : 'Auto context' }}
+            </button>
+            <button
+              class="text-xs text-blue-600 hover:underline"
+              type="button"
+              data-testid="setup-api-key-link"
+              @click="emit('open-llm-settings')"
+            >
+              Setup API key
+            </button>
+          </div>
+        </div>
         <textarea
           :value="generatedContext"
           rows="10"
@@ -52,7 +84,7 @@
 </template>
 
 <script setup>
-import { defineProps, ref, computed } from 'vue';
+import { defineProps, ref, computed, defineEmits, watch } from 'vue';
 import { ClipboardSetText as WailsClipboardSetText } from '../../../wailsjs/runtime/runtime';
 
 const props = defineProps({
@@ -75,8 +107,22 @@ const props = defineProps({
   platform: { // To know if we are on macOS
     type: String,
     default: 'unknown'
+  },
+  hasActiveLlmKey: {
+    type: Boolean,
+    default: false
+  },
+  isAutoContextLoading: {
+    type: Boolean,
+    default: false
+  },
+  userTask: {
+    type: String,
+    default: ''
   }
 });
+
+const emit = defineEmits(['auto-context', 'open-llm-settings', 'update:userTask']);
 
 const progressBarWidth = computed(() => {
   if (props.generationProgress && props.generationProgress.total > 0) {
@@ -86,6 +132,23 @@ const progressBarWidth = computed(() => {
   return '0%';
 });
 const copyButtonText = ref('Copy All');
+const localUserTask = ref(props.userTask);
+let userTaskInputDebounceTimer = null;
+
+watch(() => props.userTask, (newValue) => {
+  if (newValue !== localUserTask.value) {
+    localUserTask.value = newValue;
+  }
+});
+
+watch(localUserTask, (currentValue) => {
+  clearTimeout(userTaskInputDebounceTimer);
+  userTaskInputDebounceTimer = setTimeout(() => {
+    if (currentValue !== props.userTask) {
+      emit('update:userTask', currentValue);
+    }
+  }, 300);
+});
 
 async function copyGeneratedContextToClipboard() {
   if (!props.generatedContext) return;

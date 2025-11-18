@@ -31,6 +31,10 @@
                     :split-line-limit="splitLineLimitValue"
                     :shotgun-git-diff="shotgunGitDiff"
                     :split-line-limit-value="splitLineLimitValue"
+                    :has-active-llm-key="hasActiveLlmKey"
+                    :is-auto-context-loading="isAutoContextLoading"
+                    @auto-context="requestAutoContextSelection"
+                    @open-llm-settings="openLlmSettingsModal"
                     @step-action="handleStepAction"
                     @update-composed-prompt="handleComposedPromptUpdate"
                     @update:user-task="handleUserTaskUpdate"
@@ -46,6 +50,12 @@
     >
     </div>
     <BottomConsole :log-messages="logMessages" :height="consoleHeight" ref="bottomConsoleRef" />
+    <LlmSettingsModal
+      :is-visible="isLlmSettingsModalVisible"
+      :initial-settings="llmSettings"
+      @close="closeLlmSettingsModal"
+      @saved="handleLlmSettingsSaved"
+    />
   </div>
 </template>
 
@@ -55,7 +65,20 @@ import HorizontalStepper from './HorizontalStepper.vue';
 import LeftSidebar from './LeftSidebar.vue';
 import CentralPanel from './CentralPanel.vue';
 import BottomConsole from './BottomConsole.vue';
-import { ListFiles, RequestShotgunContextGeneration, SelectDirectory as SelectDirectoryGo, StartFileWatcher, StopFileWatcher, SetUseGitignore, SetUseCustomIgnore, SplitShotgunDiff } from '../../wailsjs/go/main/App';
+import LlmSettingsModal from './LlmSettingsModal.vue';
+import {
+  ListFiles,
+  RequestAutoContextSelection,
+  RequestShotgunContextGeneration,
+  SelectDirectory as SelectDirectoryGo,
+  StartFileWatcher,
+  StopFileWatcher,
+  SetUseGitignore,
+  SetUseCustomIgnore,
+  SplitShotgunDiff,
+  GetLlmSettings,
+  HasActiveLlmKey,
+} from '../../wailsjs/go/main/App';
 import { EventsOn, Environment } from '../../wailsjs/runtime/runtime';
 
 const currentStep = ref(1);
@@ -108,6 +131,10 @@ const isLoadingSplitDiffs = ref(false);
 const splitDiffs = ref([]);
 const shotgunGitDiff = ref('');
 const splitLineLimitValue = ref(0); // Add new state variable
+const hasActiveLlmKey = ref(false);
+const isAutoContextLoading = ref(false);
+const isLlmSettingsModalVisible = ref(false);
+const llmSettings = ref({});
 let debounceTimer = null;
 
 // Watcher related
@@ -210,6 +237,35 @@ function isAnyParentVisuallyExcluded(node) {
   return false;
 }
 
+function hasVisuallyIncludedDescendant(node) {
+  if (!node || !node.children || node.children.length === 0) {
+    return false;
+  }
+  return node.children.some((child) => !child.excluded || hasVisuallyIncludedDescendant(child));
+}
+
+function collectTrulyExcludedPaths(nodes, target) {
+  if (!nodes || nodes.length === 0) return;
+  nodes.forEach((node) => {
+    if (node.excluded && !hasVisuallyIncludedDescendant(node)) {
+      target.push(node.relPath);
+    } else if (node.children && node.children.length > 0) {
+      collectTrulyExcludedPaths(node.children, target);
+    }
+  });
+}
+
+function buildExcludedPathsPayload() {
+  const excluded = [];
+  collectTrulyExcludedPaths(fileTree.value, excluded);
+  return excluded;
+}
+
+function normalizeRelPath(value) {
+  if (!value) return '';
+  return value.replace(/\\/g, '/').replace(/^\.\//, '').replace(/^\/+/, '');
+}
+
 function toggleExcludeNode(nodeToToggle) {
   // If the node is under an unselected parent and is currently unselected itself (nodeToToggle.excluded is true),
   // the first click should select it (set nodeToToggle.excluded to false).
@@ -304,44 +360,7 @@ function debouncedTriggerShotgunContextGeneration() {
     updateAllNodesExcludedState(fileTree.value);
     generationProgressData.value = { current: 0, total: 0 }; // Reset progress before new request
 
-    const excludedPathsArray = [];
-    
-    // Helper to determine if a node has any visually included (checkbox checked) descendants
-    function hasVisuallyIncludedDescendant(node) {
-      if (!node.isDir || !node.children || node.children.length === 0) {
-        return false;
-      }
-      for (const child of node.children) {
-        if (!child.excluded) { // If child itself is visually included (checkbox is checked)
-          return true;
-        }
-        if (hasVisuallyIncludedDescendant(child)) { // Or if any of its descendants are
-          return true;
-        }
-      }
-      return false;
-    }
-
-    function collectTrulyExcludedPaths(nodes) {
-       if (!nodes) return;
-       nodes.forEach(node => {
-        // A node is TRULY excluded if its checkbox is unchecked (node.excluded is true)
-        // AND it does not have any descendant that is checked (visually included).
-        if (node.excluded && !hasVisuallyIncludedDescendant(node)) {
-          excludedPathsArray.push(node.relPath);
-          // If a node is truly excluded, its children are implicitly excluded from generation,
-          // so no need to recurse further for collecting excluded paths under this node.
-        } else {
-          // If the node is visually included OR it's visually excluded but has an included descendant
-          // (meaning this node's path needs to be in the tree structure for its descendant),
-          // then we must check its children for their own exclusion status.
-          if (node.children && node.children.length > 0) {
-            collectTrulyExcludedPaths(node.children);
-          }
-        }
-       });
-     }
-    collectTrulyExcludedPaths(fileTree.value);
+    const excludedPathsArray = buildExcludedPathsPayload();
  
      RequestShotgunContextGeneration(projectRoot.value, excludedPathsArray)
        .catch(err => {
@@ -501,6 +520,10 @@ onMounted(() => {
     // console.log("FE: Progress event:", progress); // For debugging in Browser console
     generationProgressData.value = progress;
   });
+  EventsOn("autoContextError", (message) => {
+    isAutoContextLoading.value = false;
+    addLog(`Auto context error: ${message}`, 'error', 'bottom');
+  });
 
   // Get platform information
   (async () => {
@@ -513,6 +536,7 @@ onMounted(() => {
       // platform.value remains 'unknown' as fallback
     }
   })();
+  refreshLlmSettingsState();
 
   unlistenProjectFilesChanged = EventsOn("projectFilesChanged", (changedRootDir) => {
     if (changedRootDir !== projectRoot.value) {
@@ -614,6 +638,100 @@ function handleShotgunGitDiffUpdate(val) {
 
 function handleSplitLineLimitUpdate(val) {
   splitLineLimitValue.value = val;
+}
+
+async function refreshLlmSettingsState() {
+  try {
+    llmSettings.value = await GetLlmSettings();
+    hasActiveLlmKey.value = await HasActiveLlmKey();
+  } catch (err) {
+    addLog(`Failed to load LLM settings: ${err?.message || err}`, 'error', 'bottom');
+  }
+}
+
+function openLlmSettingsModal() {
+  isLlmSettingsModalVisible.value = true;
+}
+
+function closeLlmSettingsModal() {
+  isLlmSettingsModalVisible.value = false;
+}
+
+async function handleLlmSettingsSaved() {
+  await refreshLlmSettingsState();
+  addLog('LLM settings updated.', 'success', 'bottom');
+}
+
+function applyAutoSelection(selectedRelativePaths) {
+  if (!Array.isArray(selectedRelativePaths) || selectedRelativePaths.length === 0) {
+    addLog('Auto context returned an empty selection.', 'warn', 'bottom');
+    return;
+  }
+  const normalizedSet = new Set(
+    selectedRelativePaths.map((path) => normalizeRelPath(path)).filter((path) => path && path !== '.')
+  );
+  if (normalizedSet.size === 0) {
+    addLog('Auto context did not include any valid paths.', 'warn', 'bottom');
+    return;
+  }
+
+  const markNode = (node) => {
+    if (!node) return false;
+    const normalized = normalizeRelPath(node.relPath);
+    let includeSelf = normalized === '' || normalized === '.' || normalizedSet.has(normalized);
+    if (node.children && node.children.length > 0) {
+      let childIncluded = false;
+      node.children.forEach((child) => {
+        if (markNode(child)) {
+          childIncluded = true;
+        }
+      });
+      includeSelf = includeSelf || childIncluded;
+    }
+    node.excluded = !includeSelf;
+    manuallyToggledNodes.set(node.relPath, node.excluded);
+    return includeSelf;
+  };
+
+  manuallyToggledNodes.clear();
+  fileTree.value.forEach((node) => markNode(node));
+  updateAllNodesExcludedState(fileTree.value);
+  addLog(`Auto context selected ${normalizedSet.size} paths.`, 'success', 'bottom');
+  debouncedTriggerShotgunContextGeneration();
+}
+
+async function requestAutoContextSelection() {
+  if (!projectRoot.value) {
+    addLog('Select a project folder before running auto context.', 'warn', 'bottom');
+    return;
+  }
+  if (!hasActiveLlmKey.value) {
+    addLog('Configure an LLM provider before requesting auto context.', 'warn', 'bottom');
+    openLlmSettingsModal();
+    return;
+  }
+  if (isAutoContextLoading.value) {
+    return;
+  }
+  isAutoContextLoading.value = true;
+  addLog('Requesting auto context selection…', 'info', 'bottom');
+  try {
+    const excludedPathsArray = buildExcludedPathsPayload();
+    const selection = await RequestAutoContextSelection(
+      projectRoot.value,
+      excludedPathsArray,
+      userTask.value || ''
+    );
+    if (Array.isArray(selection) && selection.length > 0) {
+      applyAutoSelection(selection);
+    } else {
+      addLog('Auto context call completed but returned no files.', 'warn', 'bottom');
+    }
+  } catch (err) {
+    addLog(`Auto context failed: ${err?.message || err}`, 'error', 'bottom');
+  } finally {
+    isAutoContextLoading.value = false;
+  }
 }
 
 </script>

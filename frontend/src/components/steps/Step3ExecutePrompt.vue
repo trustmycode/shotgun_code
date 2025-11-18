@@ -1,16 +1,16 @@
 <template>
   <div class="p-6 flex flex-col h-full">
     <h2 class="text-xl font-semibold text-gray-800 mb-2">Step 3: Execute Prompt</h2>
-    <p class="text-gray-600 mb-2">
+    <ul class="list-disc list-inside text-gray-600 mb-2">
       <li>For now go to Google AI studio, copy the prompt and paste it there with 2.5 pro model with 0.1 temperature. It will give you <b>the diff</b></li>
-      <li>Then open any agentic code tool and ask 'apply diff' + copy-paste the diff. </li>
-    </p>
-    <p class="text-gray-600 mb-2">
-    <hr class="my-4"/>
+      <li>Then open any agentic code tool and ask 'apply diff' + copy-paste the diff.</li>
+    </ul>
+    <hr class="my-4" />
+    <div class="text-gray-600 mb-2">
       <strong>Prepare the Diff to Apply</strong>
       <br>
       This tool will split the diff into smaller parts to make it easier to apply.
-    </p>
+    </div>
     <div class="mb-4">
       <label for="shotgun-git-diff-input" class="block text-sm font-bold text-gray-700 mb-1">Git Diff Output:</label>
       <textarea
@@ -25,8 +25,8 @@
     <div class="mb-4">
       <label for="split-line-limit" class="block text-sm font-bold text-gray-700 mb-1">Approx. Lines per Split:</label>
       <p class="text-gray-600 mb-2 text-xs">
-        ⓘ This will attempt to split the diff into the specified number of lines, while keeping the original structure and the hunks.
-        The exact number of lines per split is not guaranteed, but the diff will be split into as many parts as possible.
+        Note: This tries to split the diff into roughly the specified number of lines while keeping original hunks intact.
+        The exact number of lines per split is not guaranteed, but the diff will be divided into as many coherent parts as possible.
         <br>
         Leave this unchanged if you don't want to split the diff.
       </p>
@@ -54,8 +54,7 @@
 </template>
 
 <script setup>
-import { ref, defineEmits, watch, computed, onMounted, onBeforeUnmount } from 'vue';
-import { LogInfo as LogInfoRuntime, LogError as LogErrorRuntime } from '../../../wailsjs/runtime/runtime';
+import { ref, watch, computed, onMounted, onBeforeUnmount } from 'vue';
 
 const emit = defineEmits(['action', 'update:shotgunGitDiff', 'update:splitLineLimit']);
 
@@ -179,3 +178,4 @@ const resetSplitLineLimit = () => {
   }
 }
 </script> 
+

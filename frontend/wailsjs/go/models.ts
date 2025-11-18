@@ -42,6 +42,47 @@ export namespace main {
 		    return a;
 		}
 	}
+	export class LLMSettings {
+	    activeProvider: string;
+	    model: string;
+	    openAIKey: string;
+	    openRouterKey: string;
+	    geminiKey: string;
+	    baseURL: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new LLMSettings(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.activeProvider = source["activeProvider"];
+	        this.model = source["model"];
+	        this.openAIKey = source["openAIKey"];
+	        this.openRouterKey = source["openRouterKey"];
+	        this.geminiKey = source["geminiKey"];
+	        this.baseURL = source["baseURL"];
+	    }
+	}
+
+}
+
+export namespace provider {
+	
+	export class ModelInfo {
+	    name: string;
+	    description?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new ModelInfo(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.description = source["description"];
+	    }
+	}
 
 }
 

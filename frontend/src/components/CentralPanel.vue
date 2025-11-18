@@ -1,6 +1,20 @@
 <template>
   <main class="flex-1 p-0 overflow-y-auto bg-white relative">
-    <Step1CopyStructure v-if="currentStep === 1" @action="handleAction" :generated-context="shotgunPromptContext" :is-loading-context="props.isGeneratingContext" :project-root="props.projectRoot" :generation-progress="props.generationProgress" :platform="props.platform" />
+    <Step1CopyStructure
+      v-if="currentStep === 1"
+      @action="handleAction"
+      @auto-context="emit('auto-context')"
+      @open-llm-settings="emit('open-llm-settings')"
+      :generated-context="shotgunPromptContext"
+      :is-loading-context="props.isGeneratingContext"
+      :project-root="props.projectRoot"
+      :generation-progress="props.generationProgress"
+      :platform="props.platform"
+      :has-active-llm-key="props.hasActiveLlmKey"
+      :is-auto-context-loading="props.isAutoContextLoading"
+      :user-task="props.userTask"
+      @update:user-task="(val) => emit('update:userTask', val)"
+    />
     <Step2ComposePrompt v-if="currentStep === 2" @action="handleAction" ref="step2Ref" :file-list-context="props.shotgunPromptContext" @update:finalPrompt="(val) => emit('update-composed-prompt', val)" :platform="props.platform" :user-task="props.userTask" :rules-content="props.rulesContent" :final-prompt="props.finalPrompt" @update:userTask="(val) => emit('update:userTask', val)" @update:rulesContent="(val) => emit('update:rulesContent', val)" />
     <Step3ExecutePrompt v-if="currentStep === 3" @action="handleAction" ref="step3Ref" :initial-git-diff="initialGitDiff" :initial-split-line-limit="initialSplitLineLimit" @update:shotgunGitDiff="(val) => emit('update:shotgunGitDiff', val)" @update:splitLineLimit="(val) => emit('update:splitLineLimit', val)" />
     <Step4ApplyPatch v-if="currentStep === 4" @action="handleAction" :split-diffs="props.splitDiffs" :is-loading="props.isLoadingSplitDiffs" :platform="props.platform" :split-line-limit="initialSplitLineLimit" />
@@ -27,7 +41,9 @@ const props = defineProps({
   splitDiffs: { type: Array, default: () => [] },
   isLoadingSplitDiffs: { type: Boolean, default: false },
   shotgunGitDiff: { type: String, default: '' },
-  splitLineLimitValue: { type: Number, default: 0 }
+  splitLineLimitValue: { type: Number, default: 0 },
+  hasActiveLlmKey: { type: Boolean, default: false },
+  isAutoContextLoading: { type: Boolean, default: false }
 });
 
 const initialGitDiff = computed(() => {
@@ -40,7 +56,7 @@ const initialSplitLineLimit = computed(() => {
     return value;
 });
 
-const emit = defineEmits(['stepAction', 'update-composed-prompt', 'update:userTask', 'update:rulesContent', 'update:shotgunGitDiff', 'update:splitLineLimit']);
+const emit = defineEmits(['stepAction', 'update-composed-prompt', 'update:userTask', 'update:rulesContent', 'update:shotgunGitDiff', 'update:splitLineLimit', 'auto-context', 'open-llm-settings']);
 
 const step2Ref = ref(null);
 const step3Ref = ref(null);

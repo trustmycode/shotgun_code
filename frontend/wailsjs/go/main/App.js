@@ -10,8 +10,24 @@ export function GetCustomPromptRules() {
   return window['go']['main']['App']['GetCustomPromptRules']();
 }
 
+export function GetLlmSettings() {
+  return window['go']['main']['App']['GetLlmSettings']();
+}
+
+export function HasActiveLlmKey() {
+  return window['go']['main']['App']['HasActiveLlmKey']();
+}
+
 export function ListFiles(arg1) {
   return window['go']['main']['App']['ListFiles'](arg1);
+}
+
+export function ListLlmModels(arg1) {
+  return window['go']['main']['App']['ListLlmModels'](arg1);
+}
+
+export function RequestAutoContextSelection(arg1, arg2, arg3) {
+  return window['go']['main']['App']['RequestAutoContextSelection'](arg1, arg2, arg3);
 }
 
 export function RequestShotgunContextGeneration(arg1, arg2) {
@@ -28,6 +44,22 @@ export function SetCustomIgnoreRules(arg1) {
 
 export function SetCustomPromptRules(arg1) {
   return window['go']['main']['App']['SetCustomPromptRules'](arg1);
+}
+
+export function SetLlmApiKey(arg1, arg2) {
+  return window['go']['main']['App']['SetLlmApiKey'](arg1, arg2);
+}
+
+export function SetLlmBaseURL(arg1) {
+  return window['go']['main']['App']['SetLlmBaseURL'](arg1);
+}
+
+export function SetLlmModel(arg1, arg2) {
+  return window['go']['main']['App']['SetLlmModel'](arg1, arg2);
+}
+
+export function SetLlmProvider(arg1) {
+  return window['go']['main']['App']['SetLlmProvider'](arg1);
 }
 
 export function SetUseCustomIgnore(arg1) {

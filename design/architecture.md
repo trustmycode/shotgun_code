@@ -1,291 +1,233 @@
-# Shotgun App Architecture
+# Shotgun Application Architecture
 
 ## 1. Overview
 
-The Shotgun App is a desktop application built using Wails (v2) and Vue.js (v3).
-Wails allows for building cross-platform desktop applications with a Go backend and a web-based frontend.
+Shotgun App is a desktop application built with Wails (v2) and Vue.js (v3).
+Wails makes it possible to build cross‑platform desktop applications with a Go backend and a web frontend.
 
--   **Backend:** Go. Handles file system operations, logic for identifying files/folders to exclude, and generation of the "Shotgun" text output.
--   **Frontend:** Vue.js (with Vite). Provides the user interface for folder selection, displaying the file/folder tree, marking items for exclusion, and showing the generated output.
--   **Communication:** Wails handles the binding between Go functions and JavaScript calls from the frontend.
+-   **Backend:** Go. Handles filesystem operations, logic for determining files/folders to exclude, and generation of the textual "Shotgun" output.
+-   **Frontend:** Vue.js (with Vite and Tailwind CSS). Provides the user interface for selecting a folder, displaying the file/folder tree, marking items to exclude, and showing the generated output.
+-   **Integration:** Wails provides the bridge between Go functions and JavaScript calls from the frontend.
 
 ## 2. Backend (Go)
 
-The Go backend is structured into a `main` package.
+The Go backend is structured mainly inside the `main` package.
 
-### Key Components:
+### Key components (`app.go`):
 
--   **`main.go`**:
-    -   Initializes Wails.
-    -   Sets up the application window and options.
-    -   Binds the `App` struct methods to be callable from the frontend.
-    -   Embeds the frontend assets.
--   **`app.go`**:
-    -   **`App` struct**: Holds application state or context if needed (e.g., `context.Context`).
-    -   **`startup(ctx context.Context)`**: Wails lifecycle hook, stores the context.
-    -   **`FileNode` struct**: Represents a file or folder in the tree. Includes `Name`, `Path`, `RelPath`, `IsDir`, `Children`, and `Excluded` (for UI state).
+-   **`App` struct**: Stores the application state and its dependencies.
+    -   `ctx context.Context`: Wails context.
+    -   `contextGenerator *ContextGenerator`: Instance of the context generator.
+    -   `fileWatcher *Watchman`: Instance of the filesystem watcher.
+    -   `settings AppSettings`: Current application settings (ignore rules, prompt rules).
+    -   `currentCustomIgnorePatterns *gitignore.GitIgnore`: Compiled custom ignore rules.
+    -   `configPath string`: Path to the `settings.json` configuration file.
+    -   `useGitignore bool`: Flag for using `.gitignore` rules.
+    -   `useCustomIgnore bool`: Flag for using custom ignore rules.
+    -   `projectGitignore *gitignore.GitIgnore`: Compiled rules from the project's `.gitignore`.
+-   **`startup(ctx context.Context)`**: Wails lifecycle hook. Initializes `ctx`, `contextGenerator`, `fileWatcher`, and loads settings.
+-   **`FileNode` struct**: Represents a file or folder in the tree. Includes `Name`, `Path`, `RelPath`, `IsDir`, `Children`, `IsGitignored`, `IsCustomIgnored`.
+-   **`SelectDirectory() (string, error)`**: Opens the system dialog to select a directory.
     -   **`ListFiles(dirPath string) ([]*FileNode, error)`**:
-        -   Takes a directory path as input.
-        -   Creates a single root `FileNode` representing `dirPath` itself.
-        -   The `Name` of this root node is the base name of `dirPath`.
-        -   The `RelPath` of this root node is `"."`.
-        -   `IsDir` for this root node is `true`.
-        -   Its `Children` are populated by recursively scanning the `dirPath`.
-        -   This recursive scan builds a tree structure of `FileNode` objects for the contents of `dirPath`.
-        -   Uses `os.ReadDir` and `path/filepath` for file system interaction.
-        -   Sorts entries (directories first, then by name).
-        -   Returns a slice containing only the single root `FileNode` to the frontend.
-    -   **`GenerateShotgunOutput(rootDir string, excludedPaths []string) (string, error)`**:
-        -   Takes the root directory path and a list of relative paths to exclude.
-        -   **Tree Generation**:
-            -   Recursively traverses the `rootDir`.
-            -   Skips any file or folder whose relative path is in `excludedPaths`. If a folder is excluded, its children are also skipped.
-            -   Builds a textual tree representation (e.g., using `├──`, `└──`, `│`).
-        -   **File Content Aggregation**:
-            -   For each non-excluded file:
-                -   Reads its content.
-                -   Formats it using an XML-like structure: `<file path="path/to/file.ext">\n[file_content]\n</file>`.
-                -   The `name` attribute contains the path relative to `rootDir`, using forward slashes.
-        -   **Final Output**:
-            -   Concatenates the tree structure, a newline, and all formatted file contents.
-            -   Returns the complete string.
+        -   Accepts a directory path.
+        -   Loads and compiles `.gitignore` from the given directory (if it exists) and stores it in `projectGitignore`.
+        -   Creates the root `FileNode` representing `dirPath`.
+        -   Recursively scans `dirPath` using `buildTreeRecursive` to build the tree of child `FileNode`s, taking into account rules from `.gitignore` (if `useGitignore` is enabled) and custom rules (if `useCustomIgnore` is enabled).
+        -   Returns a slice containing only the root `FileNode`.
 
-    -   **`Watchman` (File System Watcher)**:
-        -   A component responsible for monitoring file system changes within the selected project directory.
-        -   **`Watchman` struct**: Holds the application context, root directory being watched, a ticker for periodic checks, the last known state of files, a mutex for synchronization, and a cancel function for its goroutine.
-        -   **`fileMeta` struct**: Stores metadata for each file/directory (ModTime, Size, IsDir) for comparison against the last known state.
-        -   **`NewWatchman(app *App)`**: Constructor for the `Watchman`.
-        -   **`App.StartFileWatcher(rootDirPath string) error` / `App.StopFileWatcher() error`**: Methods exposed to the frontend via Wails. These are called by the frontend to start and stop the file watcher for a given `rootDirPath`. They delegate to the `Watchman` instance.
-        -   **`Watchman.Start(newRootDir string)`**: Initializes and starts the watching process. It stops any previous watcher, performs an initial scan of `newRootDir` using `scanDirectoryState` to establish `lastKnownState`, and then launches the `run` method in a new goroutine.
-        -   **`Watchman.Stop()`**: Stops the current watcher by calling its `cancelFunc` (which cancels the context for the `run` goroutine), stops the ticker, and clears internal state like `rootDir` and `lastKnownState`.
-        -   **`Watchman.run(ctx context.Context)`**: The main monitoring loop, running in its own goroutine. It uses a `time.Ticker` (e.g., every 200ms) to periodically:
-            -   Check if the context has been cancelled (e.g., by `Stop()`).
-            -   Call `scanDirectoryState` to get the current state of files and directories.
-            -   Call `compareStates` to check for differences against `lastKnownState`.
-            -   If changes are detected, it calls `App.notifyFileChange` and updates `lastKnownState`.
-        -   **`Watchman.scanDirectoryState(scanRootDir string)`**: Recursively walks the `scanRootDir` (using `filepath.WalkDir`), collecting `fileMeta` for each file and directory. It calculates paths relative to `scanRootDir`. It includes logic to skip certain directories (e.g., `.git` at the top level of the scanned root) and handles errors during traversal by logging them and attempting to continue.
-        -   **`Watchman.compareStates(oldState, newState map[string]fileMeta)`**: Compares the `newState` with the `oldState`. It checks for:
-            -   Differences in the number of items (creations/deletions).
-            -   Items present in `newState` but not `oldState` (creations).
-            -   For items present in both, it checks for changes in `IsDir` status, `Size`, or `ModTime`.
-            Returns `true` if any change is detected.
-        -   **`App.notifyFileChange(rootDir string)`**: If `compareStates` detects any changes, this method is called on the `App` struct. It emits a `projectFilesChanged` Wails event to the frontend, passing the `rootDir` that experienced changes.
-        -   The frontend listens to this `projectFilesChanged` event to trigger actions like queuing a reload of the file tree (`FileTree.vue`) and, subsequently, the project context if the system is not busy (e.g., not already loading the tree or generating context).
+-   **`ContextGenerator` struct**: Manages asynchronous context generation.
+    -   `requestShotgunContextGenerationInternal(rootDir string, excludedPaths []string)`: Internal method for starting/restarting generation in a separate goroutine. Handles cancellation of previous jobs.
+-   **`RequestShotgunContextGeneration(rootDir string, excludedPaths []string) error`**: Method exposed to the frontend via Wails. Delegates the call to `contextGenerator`.
+-   **`countProcessableItems(jobCtx context.Context, rootDir string, excludedMap map[string]bool) (int, error)`**: Recursively counts the number of items (directories, files to be listed, files whose contents will be read) to estimate total progress for context generation.
+-   **`generateShotgunOutputWithProgress(jobCtx context.Context, rootDir string, excludedPaths []string) (string, error)`**:
+    -   Main function for generating the textual project context.
+    -   Accepts the job context `jobCtx` for cancellation, `rootDir`, and the list of `excludedPaths`.
+    -   Builds a textual representation of the file tree and aggregates the contents of non‑excluded files in an XML‑like format (`<file path="...">...</file>`).
+    -   Periodically calls `emitProgress` to send the `shotgunContextGenerationProgress` event to the frontend.
+    -   Checks the overall size of the generated output against `maxOutputSizeBytes`. If the limit is exceeded, returns the `ErrContextTooLong` error.
+    -   On completion (or on error/cancellation) sends either `shotgunContextGenerated` or `shotgunContextError` to the frontend.
+-   **`Watchman` struct**: Component for monitoring filesystem changes.
+    -   `StartFileWatcher(rootDirPath string) error` / `StopFileWatcher() error`: Methods exposed to the frontend.
+    -   `Start(newRootDir string)`: Initializes and starts watching using `fsnotify`.
+    -   `Stop()`: Stops the current watcher.
+    -   `run(ctx context.Context)`: Main monitoring loop running in a goroutine. Reacts to `fsnotify` events, filters them using ignore rules, manages adding/removing directories from watching, and notifies the frontend via `App.notifyFileChange`.
+    -   `addPathsToWatcherRecursive(baseDirToAdd string)`: Recursively adds directories to `fsnotify.Watcher`, skipping ignored paths.
+    -   `RefreshIgnoresAndRescan()`: Reloads ignore rules and restarts `fsnotify.Watcher` with updated paths.
+-   **`AppSettings` struct**: Structure for storing settings (`CustomIgnoreRules`, `CustomPromptRules`).
 
-### Wails Integration:
+-   **Configuration management**:
+    -   `compileCustomIgnorePatterns()`: Compiles textual ignore rules into a `gitignore.GitIgnore` object.
+    -   `loadSettings()`: Loads settings from `settings.json` (using `xdg.ConfigFile`). If the file is missing or invalid, uses built‑in defaults (`defaultCustomIgnoreRulesContent` and `defaultCustomPromptRulesContent`).
+    -   `saveSettings()`: Persists current settings to `settings.json`.
 
--   The `App` struct and its public methods (`ListFiles`, `GenerateShotgunOutput`) are bound using `wails.Run(&options.App{Bind: ...})`.
--   Wails automatically generates JavaScript bindings in `frontend/wailsjs/go/main/App.js` for these methods, allowing the frontend to call them.
--   For folder selection, the Go backend can expose a method that uses `runtime.OpenDirectoryDialog` from the Wails runtime package. This method is then bound and called from the frontend.
+-   **Methods for managing rules and flags (exposed to the frontend)**:
+    -   `GetCustomIgnoreRules() string`
+    -   `SetCustomIgnoreRules(rules string) error`
+    -   `GetCustomPromptRules() string`
+    -   `SetCustomPromptRules(rules string) error`
+    -   `SetUseGitignore(enabled bool) error`
+    -   `SetUseCustomIgnore(enabled bool) error`
+
+-   **`notifyFileChange(rootDir string)`**: Sends the `projectFilesChanged` event to the frontend.
+
+### `main.go`:
+
+-   Initializes Wails.
+-   Configures the application window and its options (title, dimensions, background color).
+-   Embeds frontend assets (`embed`).
+-   Binds an instance of `App` so its public methods can be called from the frontend.
+-   Configures the system menu (for example, the standard macOS menu).
 
 ## 3. Frontend (Vue.js)
 
-The frontend is a Single Page Application (SPA) built with Vue 3 (Composition API), Vite, and Tailwind CSS.
-It implements a multi-step user interface to guide the user through the process of preparing project context, composing prompts, executing them, and applying patches.
+The frontend is a single‑page application (SPA) built with Vue 3 (Composition API), Vite, and Tailwind CSS.
+It implements a multi‑step user interface for preparing project context, composing prompts, "executing" them, and "applying" patches.
 
-### Key Components:
+### Key components:
 
--   **`main.js`**: Entry point for the Vue application. Initializes Vue and mounts the root `App.vue` component.
--   **`App.vue`**: Root component.
-    -   Mounts the `MainLayout.vue` component, which orchestrates the overall UI.
+-   **`main.js`**: Entry point of the Vue application.
+-   **`App.vue`**: Root component that mounts `MainLayout.vue`.
 -   **`components/MainLayout.vue`**:
-    -   **Overall Structure**: Manages the main layout consisting of a horizontal stepper, a left sidebar, a central content panel, and a bottom console.
-    -   **State Management (using `ref` and `reactive`)**:
-        -   `currentStep`: Tracks the active step in the multi-step process (1-4).
-        -   `steps`: An array of step objects, each with an `id`, `title`, and `completed` status.
-        -   `logMessages`: Array for storing messages to be displayed in the `BottomConsole`.
-    -   **Core Logic**:
-        -   Handles navigation between steps via `navigateToStep`.
-        -   Manages actions triggered from step components via `handleStepAction`, orchestrating the flow between steps and simulating backend interactions.
-        -   Updates step completion status.
--   **`components/HorizontalStepper.vue`**:
-    -   Displays the steps (1-4) horizontally at the top of the application.
-    -   Highlights the current step and marks completed steps.
-    -   Allows navigation to completed steps or the next uncompleted step.
+    -   **Structure**: Manages the main layout: horizontal stepper (`HorizontalStepper`), left sidebar (`LeftSidebar`), central content panel (`CentralPanel`), and bottom console (`BottomConsole`).
+    -   **State management** (using `ref` and `reactive`):
+        -   `currentStep`: Current active step (1–4).
+        -   `steps`: Array of step objects with `id`, `title`, `completed`, `description`.
+        -   `logMessages`: Array of log messages for `BottomConsole`.
+        -   `projectRoot`, `fileTree`, `shotgunPromptContext`, `useGitignore`, `useCustomIgnore`, `loadingError`, `isGeneratingContext`, `generationProgressData`, `userTask`, `rulesContent`, `finalPrompt`: State related to the project, context, and user input.
+    -   **Logic**:
+        -   Navigation between steps (`navigateToStep`).
+        -   Handling actions from step components (`handleStepAction`).
+        -   Interaction with the Go backend (calling `SelectDirectoryGo`, `ListFiles`, `RequestShotgunContextGeneration`, settings methods).
+        -   Subscribing to Wails events (`shotgunContextGenerated`, `shotgunContextError`, `shotgunContextGenerationProgress`, `projectFilesChanged`).
+        -   Managing `Watchman` (start/stop).
+        -   Debouncing context generation (`debouncedTriggerShotgunContextGeneration`).
+        -   Updating excluded state for nodes in the tree (`updateAllNodesExcludedState`, `toggleExcludeNode`).
+-   **`components/HorizontalStepper.vue`**: Displays steps (1–4) at the top and enables navigation.
 -   **`components/LeftSidebar.vue`**:
-    -   A persistent sidebar on the left.
-    -   Contains a placeholder for a `FileTree.vue` component (for displaying project file structure).
-    -   Displays a list of steps (e.g., "1. Prepare Context", "2. Compose Prompt"), allowing navigation similar to the `HorizontalStepper`.
--   **`components/CentralPanel.vue`**:
-    -   The main content area that dynamically renders the component for the current active step.
-    -   Uses `v-if` directives based on `currentStep` to show one of the following step-specific components:
-        -   `components/steps/Step1CopyStructure.vue` (handles "Prepare Context")
-        -   `components/steps/Step2GenerateDiff.vue` (handles "Compose Prompt")
-        -   `components/steps/Step3ExecuteDiff.vue` (handles "Execute Prompt")
-        -   `components/steps/Step4ApplyPatch.vue`
-    -   Forwards actions from step components to `MainLayout.vue`.
-    -   Exposes methods like `updateStep2DiffOutput` and `addLogToStep3Console` to allow `MainLayout.vue` to push data into specific step components (e.g., diff output into Step 2, logs into Step 3's console).
--   **`components/steps/Step1CopyStructure.vue`** (handles "Prepare Context"):
-    -   UI for the first step.
-    -   Contains a "Prepare Project Context & Proceed" button.
-    -   Emits an action (e.g., `prepareContext`) to `MainLayout.vue` to signify completion and move to the next step.
--   **`components/steps/Step2GenerateDiff.vue`** (handles "Compose Prompt"):
+    -   Displays the "Select Project Folder" button and the project path.
+    -   Contains the "Use .gitignore rules" and "Use custom rules" checkboxes.
+    -   Provides a button (⚙️) to open the modal for editing custom ignore rules (`CustomRulesModal.vue`).
+    -   Displays the project file tree using `FileTree.vue`.
+    -   Shows the list of steps for navigation.
+-   **`components/CentralPanel.vue`**: Dynamically renders the component for the current step.
+-   **`components/steps/Step1PrepareContext.vue`**:
+    -   UI for the first step. Displays a progress bar while context is being generated.
+    -   Shows the generated `generatedContext` in a read‑only `<textarea>` or an error message.
+    -   Provides a button to copy the context to the clipboard.
+-   **`components/steps/Step2ComposePrompt.vue`**:
     -   UI for the second step.
-    -   Includes a `<textarea>` for the user to input their prompt for the LLM.
-    -   A "Compose Prompt" button that triggers an action (e.g., `composePrompt`) with the prompt text.
-    -   A `<pre>` block to display the diff output received from `MainLayout.vue`.
--   **`components/steps/Step3ExecuteDiff.vue`** (handles "Execute Prompt"):
-    -   UI for the third step.
-    -   A "Execute Prompt" button (e.g., `executePrompt`).
--   **`components/steps/Step4ApplyPatch.vue`**:
-    -   UI for the fourth step.
-    -   A placeholder for an interactive patch editor (shows stubbed hunks with checkboxes).
-    -   "Apply Selected" and "Apply All & Finish" buttons.
--   **`components/BottomConsole.vue`**:
-    -   A console area at the bottom of the application.
-    -   Displays general execution status logs passed from `MainLayout.vue`.
-    -   Typically visible from Step 3 onwards.
--   **`components/FileTree.vue`**: (Currently a stub in `LeftSidebar.vue`, based on previous architecture)
-    -   Intended to be a recursive component to display the file/folder tree.
-    -   Props: `nodes` (array of `FileNode`), `projectRoot`.
-    -   Will allow users to view the project structure. (Interaction for exclusion marking was part of the previous design and may be re-integrated or adapted).
--   **`assets/main.css`**: Includes Tailwind CSS directives and minimal global styles.
--   **`tailwind.config.js` & `postcss.config.js`**: Configuration for Tailwind CSS.
--   **`index.html`**: Main HTML file.
--   **`vite.config.js`**: Vite build configuration.
--   **`package.json`**: Frontend project metadata and dependencies (Vue, Vite, Tailwind CSS).
+    -   `<textarea>` for entering the user's task (`userTask`).
+    -   `<textarea>` for displaying/editing custom prompt rules (`rulesContent`), with a button (⚙️) to edit them through `CustomRulesModal.vue`.
+    -   Read‑only `<textarea>` for displaying file context (`fileListContext` from `shotgunPromptContext`).
+    -   Dropdown for selecting a prompt template (`promptTemplates`).
+    -   `<textarea>` for displaying the final composed prompt (`finalPrompt`).
+    -   Approximate token count indicator and a button to copy the final prompt.
+    -   Automatic recomputation of the final prompt whenever input data changes.
+-   **`components/steps/Step3ExecutePrompt.vue`**: Placeholder UI for the third step.
+-   **`components/steps/Step4ApplyPatch.vue`**: Placeholder UI for the fourth step that imitates a patch editor.
+-   **`components/BottomConsole.vue`**: Displays global execution logs passed from `MainLayout.vue`. Console height is resizable by the user.
+-   **`components/FileTree.vue`**: Recursive component for rendering the file/folder tree. Allows marking items for exclusion using checkboxes.
+-   **`components/CustomRulesModal.vue`**: Modal dialog for editing custom rules (ignore or prompt).
+-   **Integration with Wails**:
+    -   Calling Go methods from `frontend/wailsjs/go/main/App.js`.
+    -   Subscribing to events from Go using `EventsOn` from `frontend/wailsjs/runtime/runtime.js`.
 
-### Wails Integration:
+## 4. Data Flow and Application Logic (Multi‑step UI)
 
--   (As per previous architecture) Frontend calls Go methods via `import { MethodName } from '../../wailsjs/go/main/App';`.
--   The Go backend methods like `ListFiles` and `GenerateShotgunOutput` (and a potential `SelectDirectory` wrapper) are still relevant for providing data and performing core operations. The new UI will now trigger these at different stages of its multi-step process. For example, `ListFiles` might be called after an initial project selection step (implicitly part of or preceding Step 1), and `GenerateShotgunOutput` (or a similar method for LLM interaction) would be relevant around Step 2/3.
+The application operates as a sequence of steps coordinated by `MainLayout.vue`:
 
-## 4. Data Flow & Application Logic (Multi-Step UI)
+1.  **Initialization and Step 1 (Prepare Context)**:
+    -   The application starts on Step 1.
+    -   The user clicks "Select Project Folder". `MainLayout.vue` calls `SelectDirectoryGo`.
+    -   On successful directory selection (`projectRoot` is updated):
+        -   `MainLayout.vue` calls `ListFiles(projectRoot)` to load the file structure.
+        -   The received data is transformed into `fileTree`.
+        -   `Watchman` is started for `projectRoot` (`StartFileWatcher`).
+        -   `debouncedTriggerShotgunContextGeneration` is automatically invoked to generate `shotgunPromptContext`.
+    -   `CentralPanel.vue` renders `Step1PrepareContext.vue`, which shows progress and then the result (`shotgunPromptContext`) or an error.
+    -   The user can change `useGitignore`, `useCustomIgnore`, or exclude files in `FileTree.vue`. These actions trigger `debouncedTriggerShotgunContextGeneration`.
+    -   Step 1 is considered completed (`completed: true`) when `shotgunPromptContext` is generated successfully.
 
-The application operates based on a sequence of steps, managed by `MainLayout.vue`:
+2.  **Step 2 (Compose Prompt)**:
+    -   `CentralPanel.vue` renders `Step2ComposePrompt.vue`.
+    -   `shotgunPromptContext` (as `fileListContext`), `userTask`, and `rulesContent` are used to build `finalPrompt` based on the selected template.
+    -   The user enters `userTask` and can edit `rulesContent`.
+    -   `finalPrompt` is updated automatically.
+    -   Step 2 is considered completed when `finalPrompt` is non‑empty and Step 1 is completed.
 
-1.  **Initialization (Step 1: Prepare Context)**:
-    -   The application starts at Step 1.
-    -   `CentralPanel.vue` displays `Step1CopyStructure.vue`.
-    -   User Action: Clicks "Prepare Project Context & Proceed".
-    -   `Step1CopyStructure.vue` emits an `action` (e.g., `prepareContext`) to `MainLayout.vue`.
-    -   `MainLayout.vue` handles the action:
-        -   Simulates a backend call (e.g., `GenerateShotgunOutput` to prepare the context).
-        -   Logs the action to `BottomConsole.vue` (if visible) and potentially to a step-specific console.
-        -   Marks Step 1 as completed.
-        -   Advances `currentStep` to 2.
+3.  **Step 3 (Execute Prompt)**:
+    -   `CentralPanel.vue` renders `Step3ExecutePrompt.vue` (currently a placeholder with instructions).
+    -   Conceptually, this is where `finalPrompt` would be sent to an LLM and a response (for example, a diff) would be received.
+    -   In the current placeholder implementation, Step 3 is conditionally treated as completed to allow moving forward.
 
-2.  **Step 2: Compose Prompt**:
-    -   `CentralPanel.vue` now displays `Step2GenerateDiff.vue`.
-    -   User Action: Enters a prompt in the textarea and clicks "Compose Prompt".
-    -   `Step2GenerateDiff.vue` emits an `action` (e.g., `composePrompt`) with the prompt payload to `MainLayout.vue`.
-    -   `MainLayout.vue` handles the action:
-        -   Simulates a backend call to an LLM (this would involve sending the prompt and context to an LLM to get a diff).
-        -   Receives a mock diff output.
-        -   Calls `centralPanelRef.value.updateStep2DiffOutput(mockDiff)` to send the diff to `Step2GenerateDiff.vue` for display.
-        -   Logs the action.
-        -   Marks Step 2 as completed.
-        -   Advances `currentStep` to 3.
+4.  **Step 4 (Apply Patch)**:
+    -   `CentralPanel.vue` renders `Step4ApplyPatch.vue` (placeholder that imitates a patch editor).
+    -   The user simulates applying patches.
+    -   Step 4 is considered completed after this "application".
 
-3.  **Step 3: Execute Prompt**:
-    -   `CentralPanel.vue` displays `Step3ExecuteDiff.vue`.
-    -   `BottomConsole.vue` becomes visible (or more active).
-    -   User Action: Clicks "Execute Prompt".
-    -   `Step3ExecuteDiff.vue` emits an `action` (e.g., `executePrompt`) to `MainLayout.vue`.
-    -   `MainLayout.vue` handles the action:
-        -   Simulates the execution of the diff (e.g., applying changes in memory or preparing for a patch, this is conceptual for "executing the prompt's intent").
-        -   Sends logs specifically to `Step3ExecuteDiff.vue`'s console via `centralPanelRef.value.addLogToStep3Console(message, type)`.
-        -   Also sends general logs to `BottomConsole.vue`.
-        -   Marks Step 3 as completed.
-        -   Advances `currentStep` to 4.
+**Navigation and state:**
 
-4.  **Step 4: Apply Patch**:
-    -   `CentralPanel.vue` displays `Step4ApplyPatch.vue`.
-    -   User Action: Interacts with the (stubbed) patch editor (e.g., selecting hunks) and clicks "Apply Selected" or "Apply All & Finish".
-    -   `Step4ApplyPatch.vue` emits an `action` (e.g., `applySelectedPatches` or `applyAllPatches`) to `MainLayout.vue`.
-    -   `MainLayout.vue` handles the action:
-        -   Simulates applying the patches to the file system.
-        -   Logs the final actions.
-        -   Marks Step 4 as completed.
-        -   The process might conclude, or allow for further iterations/restarts.
+-   `HorizontalStepper.vue` and `LeftSidebar.vue` (step list) provide navigation. The user can go back to completed steps or move to the next incomplete one.
+-   The `completed` status of each step in `MainLayout.vue` controls navigation and visual state.
+-   The `projectFilesChanged` event from `Watchman` triggers reloading of `fileTree` and, consequently, regeneration of `shotgunPromptContext`, provided the system is not busy with other operations.
 
-**Navigation & State**:
--   `HorizontalStepper.vue` and `LeftSidebar.vue` allow navigation between steps. Users can typically go back to completed steps or forward to the next uncompleted step.
--   The `completed` status of each step in `MainLayout.vue`'s `steps` ref controls navigability and visual state.
--   The `FileTree.vue` component in the `LeftSidebar.vue` is intended to display the project's file structure. Its interaction with the steps (e.g., updating after a patch is applied in Step 4) will be a key part of future development.
+## 5. Asynchronous Project Context Generation
 
-## Asynchronous Project Context Generation
+The project context (`shotgunPromptContext`) is generated asynchronously to improve UX and UI responsiveness:
 
-The project context, which is the text output displayed in the "Prepare Context" step (Step 1), is now generated asynchronously to improve user experience and UI responsiveness. The key aspects of this implementation are:
+-   **Automatic regeneration**: When changes occur in the file tree (project selection, ignore rules update, filesystem changes detected by `Watchman`), the context is automatically regenerated in a background goroutine on the Go side.
+-   **Loading indication**: While generation is in progress, the frontend displays a progress bar (`Step1PrepareContext.vue`).
+-   **Task cancellation and debouncing**: On rapid consecutive changes, debouncing is used (a delay before starting generation). If a new generation request arrives while the previous one is running, the previous job is cancelled.
+-   **No manual trigger**: The "Prepare Project Context & Proceed" button was removed from Step 1, because the context is always kept up to date automatically.
 
-1.  **Automatic Regeneration**: Whenever there are relevant changes in the selected project's file and folder tree (e.g., toggling exclusions, changing ignore rules, or selecting a new project directory), the project context is automatically regenerated in a background goroutine on the Go side. This ensures that the UI does not freeze during potentially long operations.
+## 6. Improved Context Generation and UI Feedback
 
-2.  **Loading Indication**: While the context is being generated, the frontend displays a visual loading indicator (e.g., a spinner) in the area where the context text will appear. This informs the user that an operation is in progress.
+### 6.1. Progress reporting
 
-3.  **Job Cancellation and Debouncing**: If multiple changes occur in quick succession, the system employs a debouncing mechanism. This means that a new generation job is not started for every single change. Instead, it waits for a short period of inactivity before triggering the generation. If new changes occur while a generation job is already running, the ongoing job is cancelled, and a new one is started with the latest state of the file tree and exclusion rules. This prevents unnecessary computation and ensures the final output reflects the most recent user selections.
+-   **Backend (Go – `app.go`)**:
+    -   `countProcessableItems` estimates the total number of operations.
+    -   `generateShotgunOutputWithProgress` tracks `processedItems` and `totalItems`.
+    -   `emitProgress` periodically sends the `shotgunContextGenerationProgress` event with `{ "current": X, "total": Y }`.
+-   **Frontend (Vue.js)**:
+    -   `MainLayout.vue` listens for the event and updates `generationProgressData`.
+    -   `Step1PrepareContext.vue` shows a progress bar and textual progress information.
 
-4.  **Elimination of Manual Trigger**: Due to the automatic and reactive nature of context generation, the manual "Prepare Project Context & Proceed" button has been removed from Step 1. The context is always kept up-to-date or is in the process of being updated.
+### 6.2. Output size limitation
 
-This asynchronous approach ensures that the application remains interactive and provides a smoother experience, especially when working with large project structures.
+-   **Backend (Go – `app.go`)**:
+    -   The `maxOutputSizeBytes` constant (for example, 10 MB) defines the maximum context size.
+    -   Error `ErrContextTooLong`.
+    -   `generateShotgunOutputWithProgress` checks size at various stages. If the limit is exceeded, generation is stopped and `ErrContextTooLong` is returned.
+    -   The error is propagated to the frontend via the `shotgunContextError` event.
+-   **Frontend (Vue.js)**: The error message is displayed in `Step1PrepareContext.vue`.
 
-## Enhanced Context Generation and UI Feedback
-
-The asynchronous project context generation has been further enhanced with progress reporting and output size limits to improve user experience and application stability.
-
-### 1. Progress Reporting
-
-To provide better feedback during long-running context generation, a progress reporting mechanism has been implemented:
-
--   **Backend (Go - `app.go`):**
-    -   A new function `countProcessableItems` recursively traverses the project directory (respecting exclusions) to estimate the total number of items (directories, files to list, files to read content from) before actual generation begins.
-    -   During context generation (`generateShotgunOutputWithProgress`):
-        -   A `generationProgressState` struct tracks `processedItems` and `totalItems`.
-        -   The `emitProgress` function is called periodically (after processing the root directory line, each tree entry, and each file content) to send a `shotgunContextGenerationProgress` Wails event.
-        -   This event carries a payload like `{ "current": X, "total": Y }`.
--   **Frontend (Vue.js):**
-    -   **`MainLayout.vue`**:
-        -   Listens for the `shotgunContextGenerationProgress` Wails event.
-        -   Updates a reactive `generationProgressData` ref (`{ current: 0, total: 0 }`).
-        -   Resets `generationProgressData` before each new generation request.
-    -   **`CentralPanel.vue`**:
-        -   Receives `generationProgressData` as a prop.
-        -   Passes it down to `Step1PrepareContext.vue`.
-    -   **`steps/Step1PrepareContext.vue`**:
-        -   Receives `generationProgress` as a prop.
-        -   Displays a progress bar instead of a generic spinner.
-        -   The progress bar's width is computed based on `generationProgress.current` and `generationProgress.total`.
-        -   Displays text like "X / Y items" or "X / calculating..." if total is not yet known.
-
-### 2. Output Size Limitation
-
-To prevent excessive memory usage and overly large context outputs that might be problematic for LLMs or UI rendering:
-
--   **Backend (Go - `app.go`):**
-    -   A constant `maxOutputSizeBytes` (e.g., 1MB) defines the maximum allowed size for the generated context string.
-    -   A custom error `ErrContextTooLong` is defined.
-    -   The `generateShotgunOutputWithProgress` function checks the accumulated output size at various stages (after adding the root directory, each tree line, and before/after appending file content).
-    -   If the `maxOutputSizeBytes` is exceeded, the generation is halted, and `ErrContextTooLong` (wrapped with more details) is returned.
-    -   This error is then emitted via the `shotgunContextError` Wails event to the frontend.
--   **Frontend (Vue.js):**
-    -   The error message, including "context is too long", will be displayed in `Step1PrepareContext.vue` as part of the standard error handling for `shotgunContextError`.
-
-These enhancements provide a more transparent and robust context generation process.
-
-## 5. Cross-Platform Considerations
+## 7. Cross‑platform Support
 
 -   **Wails**: Natively supports building for Windows, macOS, and Linux from a single codebase.
--   **Go**: Standard library functions like `os` and `path/filepath` are cross-platform, handling path separators and OS-specific details.
--   **Frontend**: Web technologies (HTML, CSS, JS) are inherently cross-platform.
+-   **Go**: Standard library packages (`os`, `path/filepath`) are cross‑platform.
+-   **Frontend**: Web technologies (HTML, CSS, JS) are inherently cross‑platform.
 
-## 6. Simplicity and Minimal Libraries
+## 8. Simplicity and Minimal Dependencies
 
--   **Go Backend**: Relies primarily on the Go standard library. Wails is the main external dependency.
--   **Vue Frontend**: Uses Vue 3, Vite, and Tailwind CSS. The UI components for the stepper, panels, and steps are custom built.
--   This approach aims to keep the application maintainable and focused, leveraging Tailwind CSS for styling efficiency.
+-   **Go backend**: Primarily uses the Go standard library. Wails is the main external dependency. Additional ones: `github.com/adrg/xdg` (for configuration paths), `github.com/fsnotify/fsnotify` (for filesystem watching), `github.com/sabhiram/go-gitignore` (for parsing `.gitignore`).
+-   **Vue frontend**: Vue 3, Vite, Tailwind CSS. UI components (stepper, panels, steps) are custom.
 
-## 7. Configuration Management and Custom Ignore Rules
+## 9. Configuration Management and Custom Ignore/Prompt Rules
 
--   **Configuration Storage**: Application settings, including custom ignore rules, are stored in a JSON file (`settings.json`) within the user's standard configuration directory (e.g., `~/.config/shotgun-code/settings.json` on Linux, `%APPDATA%\Shotgun Code\Config\settings.json` on Windows). This is managed using the `github.com/adrg/xdg` library.
--   **Default Custom Rules**: The `ignore.glob` file located at the root of the application's repository serves as the source for default custom ignore rules. These rules are embedded into the application binary at build time using Go's `embed` package.
--   **Loading Rules**: On startup, the application attempts to load `settings.json`. 
-    - If the file exists and contains valid `customIgnoreRules`, these are used.
-    - If the file doesn't exist, or if `customIgnoreRules` are empty/missing or invalid, the embedded default rules are used. The application will also attempt to create/update `settings.json` with these defaults (or the last valid loaded rules if applicable).
--   **Editing Custom Rules**: 
-    - A "gear" icon (⚙️) next to the "Use custom rules" checkbox in the `LeftSidebar` opens a modal.
-    - This modal allows users to view and edit the custom ignore rules in a textarea. The rules follow `.gitignore` pattern syntax.
-    - Saving these rules updates the `settings.json` file. The application then recompiles these rules for internal use.
--   **Impact of Rule Changes**: 
-    - Any modification to the custom ignore rules (via the modal and save) triggers a reload of the project file tree in the `LeftSidebar`.
-    - This ensures that the `IsCustomIgnored` status of files and folders is updated according to the new rules.
-    - Subsequently, if "Use custom rules" is active, the project context (Step 1 output) will also be regenerated to reflect these changes.
--   **`ignore.glob` in Project Directory**: The `ignore.glob` file that might exist within a user's selected project directory is **no longer used** for the "Use custom rules" feature. This feature now exclusively relies on the application-level configuration described above. The `.gitignore` file in the project directory continues to be used for the "Use .gitignore rules" feature.
+-   **Configuration storage**: Application settings, including custom ignore rules (`CustomIgnoreRules`) and prompt rules (`CustomPromptRules`), are stored in a JSON file (`settings.json`) in the user's standard configuration directory (for example, `~/.config/shotgun-code/settings.json` on Linux). Managed via `github.com/adrg/xdg`.
+-   **Default custom ignore rules**: The `ignore.glob` file in the application repository root serves as the source of default rules. They are embedded into the binary at build time (`embed`).
+-   **Default prompt rules**: The `defaultCustomPromptRulesContent` string in `app.go`.
+-   **Loading rules**: On startup the application attempts to load `settings.json`.
+    -   If the file exists and contains valid rules, they are used.
+    -   If the file does not exist or rules are missing/invalid, built‑in default values are used. The application also attempts to create/update `settings.json` with these values.
+-   **Editing custom rules**:
+    -   The "gear" icon (⚙️) next to the "Use custom rules" checkbox in `LeftSidebar` opens the modal (`CustomRulesModal.vue`) for ignore rules.
+    -   A similar icon in `Step2ComposePrompt.vue` is used for prompt rules.
+    -   The modal allows viewing and editing rules. Ignore rules use `.gitignore` syntax.
+    -   Saving rules updates `settings.json`. For ignore rules, this also recompiles them into `currentCustomIgnorePatterns`.
+-   **Impact of rule changes**:
+    -   Any change to custom ignore rules (via the modal and saving) triggers reloading of the project file tree in `LeftSidebar` (`fileWatcher.RefreshIgnoresAndRescan`).
+    -   This ensures that the `IsCustomIgnored` state of files and folders is updated.
+    -   Subsequently, if "Use custom rules" is active, the project context (output of Step 1) is also regenerated.
+    -   Changes to prompt rules affect `finalPrompt` in Step 2.
+-   **`ignore.glob` in the project directory**: The `ignore.glob` file that may exist in the user‑selected project directory is **no longer used** for the "Use custom rules" feature. This feature now relies solely on application‑level configuration. The project's `.gitignore` file continues to be used for the "Use .gitignore rules" feature.

@@ -28,9 +28,25 @@ var defaultCustomIgnoreRulesContent string
 
 const defaultCustomPromptRulesContent = "no additional rules"
 
+const (
+	LLMProviderOpenAI     = "openai"
+	LLMProviderOpenRouter = "openrouter"
+	LLMProviderGemini     = "gemini"
+)
+
+type LLMSettings struct {
+	ActiveProvider string `json:"activeProvider"`
+	Model          string `json:"model"`
+	OpenAIKey      string `json:"openAIKey"`
+	OpenRouterKey  string `json:"openRouterKey"`
+	GeminiKey      string `json:"geminiKey"`
+	BaseURL        string `json:"baseURL"`
+}
+
 type AppSettings struct {
-	CustomIgnoreRules string `json:"customIgnoreRules"`
-	CustomPromptRules string `json:"customPromptRules"`
+	CustomIgnoreRules string      `json:"customIgnoreRules"`
+	CustomPromptRules string      `json:"customPromptRules"`
+	LLMSettings       LLMSettings `json:"llmSettings"`
 }
 
 type App struct {
@@ -43,6 +59,8 @@ type App struct {
 	useGitignore                bool
 	useCustomIgnore             bool
 	projectGitignore            *gitignore.GitIgnore // Compiled .gitignore for the current project
+	autoContextService          *AutoContextService
+	llmCache                    cachedProvider
 }
 
 func NewApp() *App {
@@ -52,6 +70,7 @@ func NewApp() *App {
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 	a.contextGenerator = NewContextGenerator(a)
+	a.autoContextService = NewAutoContextService()
 	a.fileWatcher = NewWatchman(a)
 	a.useGitignore = true    // Default to true, matching frontend
 	a.useCustomIgnore = true // Default to true, matching frontend
@@ -293,6 +312,65 @@ func (a *App) RequestShotgunContextGeneration(rootDir string, excludedPaths []st
 		return
 	}
 	a.contextGenerator.requestShotgunContextGenerationInternal(rootDir, excludedPaths)
+}
+
+func (a *App) RequestAutoContextSelection(rootDir string, excludedPaths []string, userTask string) ([]string, error) {
+	if a.autoContextService == nil {
+		return nil, errors.New("auto-context service is not initialized")
+	}
+	rootDir = strings.TrimSpace(rootDir)
+	if rootDir == "" {
+		return nil, errors.New("project root is required")
+	}
+	if !a.HasActiveLlmKey() {
+		return nil, errors.New("no active LLM configuration found")
+	}
+
+	excludedMap := make(map[string]bool)
+	for _, p := range excludedPaths {
+		excludedMap[normalizeRelativePath(p)] = true
+	}
+
+	tree, err := buildAutoContextTree(rootDir, excludedMap)
+	if err != nil {
+		a.emitAutoContextError(fmt.Sprintf("failed to build project tree: %v", err))
+		return nil, err
+	}
+
+	task := strings.TrimSpace(userTask)
+	prompt, err := a.autoContextService.BuildPrompt(tree, task, "")
+	if err != nil {
+		a.emitAutoContextError(fmt.Sprintf("failed to render auto-context prompt: %v", err))
+		return nil, err
+	}
+
+	cfg := buildProviderConfig(a.settings.LLMSettings)
+	providerInstance, err := a.getOrCreateProvider(cfg)
+	if err != nil {
+		a.emitAutoContextError(fmt.Sprintf("failed to configure provider: %v", err))
+		return nil, err
+	}
+
+	raw, err := providerInstance.Generate(a.ctx, prompt)
+	if err != nil {
+		a.emitAutoContextError(fmt.Sprintf("provider error: %v", err))
+		return nil, err
+	}
+
+	parsed, err := a.autoContextService.ParseResponse(raw)
+	if err != nil {
+		a.emitAutoContextError(fmt.Sprintf("failed to parse LLM response: %v", err))
+		return nil, err
+	}
+
+	selected, err := resolveLLMSelection(rootDir, parsed.Files)
+	if err != nil {
+		a.emitAutoContextError(fmt.Sprintf("unable to match LLM selection to files: %v", err))
+		return nil, err
+	}
+
+	runtime.LogInfof(a.ctx, "Auto-context selected %d files via %s (%s)", len(selected), cfg.Provider, cfg.Model)
+	return selected, nil
 }
 
 // countProcessableItems estimates the total number of operations for progress tracking.
@@ -902,6 +980,8 @@ func (a *App) loadSettings() {
 		}
 	}
 
+	a.ensureLLMSettingsDefaults()
+
 	if errCompile := a.compileCustomIgnorePatterns(); errCompile != nil {
 		// Error already logged in compileCustomIgnorePatterns
 	}
@@ -1003,4 +1083,9 @@ func (a *App) SetUseCustomIgnore(enabled bool) error {
 		return a.fileWatcher.RefreshIgnoresAndRescan()
 	}
 	return nil
+}
+
+func (a *App) emitAutoContextError(message string) {
+	runtime.LogError(a.ctx, message)
+	runtime.EventsEmit(a.ctx, "autoContextError", message)
 }
