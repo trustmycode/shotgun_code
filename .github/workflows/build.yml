@@ -35,7 +35,6 @@ jobs:
             platform: darwin/arm64
             build_name: shotgun-code
             output_path: build/bin/shotgun-code.app
-            # We will zip the .app manually to preserve permissions
             upload_path: shotgun-code-darwin-arm64.zip
 
     runs-on: ${{ matrix.os }}
@@ -57,22 +56,24 @@ jobs:
         with:
           node-version: '20'
 
+      # Optimization: Install Wails CLI in parallel with other setup if possible, 
+      # but here we just keep it simple.
       - name: Install Wails CLI
         run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
 
-      # FIX: Ubuntu 24.04 (Noble) requires libwebkit2gtk-4.1-dev
+      # OPTIMIZATION HERE: Added '--no-install-recommends'
+      # This significantly speeds up installation by skipping optional heavy packages (docs, extra plugins)
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev
+          sudo apt-get install -y --no-install-recommends libgtk-3-dev libwebkit2gtk-4.1-dev
 
       - name: Build Wails App
         run: |
           wails build -platform ${{ matrix.platform }} -o ${{ matrix.build_name }} -clean
 
-      # FIX FOR MAC: Zipping via ditto preserves permissions and resource forks
-      # This prevents the "App is damaged" error on macOS
+      # Fix for macOS "App is damaged" error
       - name: Package macOS Application
         if: runner.os == 'macOS'
         run: |
