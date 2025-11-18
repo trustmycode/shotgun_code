@@ -1,238 +1,156 @@
-![](https://github.com/user-attachments/assets/058bf4a2-9f81-406c-96ea-795cd4eaf118)
-
-**Tired of Cursor cutting off context, missing your files and folders, and spitting out empty responses?**
-
-Save your context with Shotgun!
-→ Prepare a truly GIGANTIC prompt
-→ Paste it into **Google AI Studio** and receive a massive patch for your code. 25 free queries per day!
-→ Drop that patch into Cursor or Windsurf and apply the entire diff in a single request.
-
-**That means you get 25 huge, fully coherent patches per day for your codebase—absolutely free, thanks to complete context transfer.**
-
-Perfect for dynamically-typed languages:
-
-Python
-JavaScript
-
 # Shotgun App
 
-*One‑click codebase "blast" for Large‑Language‑Model workflows.*
+![Shotgun App Banner](https://github.com/user-attachments/assets/058bf4a2-9f81-406c-96ea-795cd4eaf118)
+
+**Tired of Cursor cutting off context, missing your files, and spitting out empty responses?**
+
+**Shotgun** is the bridge between your local codebase and the world's most powerful LLMs.
+It doesn't just copy files; it **intelligently packages your project context** and can **execute prompts directly** against OpenAI (GPT-4o/GPT-5), Google Gemini, or OpenRouter.
+
+> **Stop copy-pasting 50 files manually.**
+> 1. Select your repo.
+> 2. Let AI pick the relevant files (Auto-Context).
+> 3. Blast the payload directly to the model or copy it for use in Cursor/Windsurf.
 
 ---
 
 ## 1. What Shotgun Does
-Shotgun is a tiny desktop tool that **explodes an entire project into a single,
-well‑structured text payload** designed for AI assistants.
-Think of it as a rapid‑fire alternative to copy‑pasting dozens of files by hand:
+Shotgun is a desktop power-tool that **explodes your project into a structured payload** designed for AI reasoning.
 
-*   **Select a folder → get an instant tree + file dump**
-    in a predictable delimiter format (`*#*#*...*#*#*begin … *#*#*end*#*#*`).
-*   **Tick check‑boxes to exclude noise** (logs, build artifacts, `node_modules`, …).
-*   **Paste the result into ChatGPT, Gemini 2.5, Cursor, etc.**
-    to ask for multi‑file edits, refactors, bug fixes, reviews, or documentation.
-*   **Receive a diff‑style reply** and apply changes with your favourite patch tool.
-
-Shotgun trades surgical, single‑file prompts for a **"whole‑repository blast"** –
-hence the name.
+It has evolved from a simple "context dumper" into a full-fledged **LLM Client for Codebases**:
+*   **Smart Selection:** Uses AI ("Auto-Context") to analyze your task and automatically select only the relevant files from your tree.
+*   **Direct Execution:** Configurable API integration with **OpenAI**, **Gemini**, and **OpenRouter**.
+*   **Prompt Engineering:** Built-in templates for different roles (Developer, Architect, Bug Hunter).
+*   **History & Audit:** Keeps a full log of every prompt sent and response received.
 
 ---
 
-## 2. Why You Might Need It
+## 2. Key Features
 
-| Scenario                 | Pain Point                             | Shotgun Benefit                                           |
-|--------------------------|----------------------------------------|-----------------------------------------------------------|
-| **Bulk bug fixing**      | "Please fix X across 12 files."        | Generates a complete snapshot so the LLM sees all usages. |
-| **Large‑scale refactor** | IDE refactors miss edge cases.         | LLM gets full context and returns a patch set.            |
-| **On‑boarding review**   | New joiner must understand legacy code. | Produce a single, searchable text file to discuss in chat.  |
-| **Doc generation**       | Want docs/tests for every exported symbol. | LLM can iterate over full source without extra API calls. |
-| **Cursor / CodePilot prompts** | Tools accept pasted context but no filesystem. | Shotgun bridges the gap.                                  |
+### 🧠 AI-Powered Context
+*   **Auto-Context:** Don't know which files are needed for a bug fix? Type your task, and Shotgun uses an LLM to scan your tree and select the relevant files for you.
+*   **Repo Scan:** supplement context retrieval with a `shotgun_reposcan.md` summary of your architecture to give the LLM high-level awareness before diving into code.
 
----
+### ⚡ Workflow Speed
+*   **Fast Tree Scan:** Go + Wails backend scans thousands of files in milliseconds.
+*   **Interactive Tree:** Manually toggle files/folders or use `.gitignore` and custom rule sets to filter noise.
+*   **One-Click Blast:** Generate a massive context payload instantly.
 
-## 3. Key Features
+### 🔌 Direct Integrations
+*   **OpenAI:** Support for GPT-4o and experimental support for **GPT-5** family models.
+*   **Google Gemini:** Native integration for Gemini 2.5/3 Pro & Flash.
+*   **OpenRouter:** Access hundreds of LLM's via a unified API.
 
-*   ⚡ **Fast tree scan** (Go + Wails backend) – thousands of files in milliseconds.
-*   ✅ **Interactive exclude list** – skip folders, temporary files, or secrets.
-*   📝 **Deterministic delimiters** – easy for LLMs to parse and for you to split.
-*   🔄 **Re‑generate anytime** – tweak the excludes and hit *Shotgun* again.
-*   🪶 **Lightweight** – no DB, no cloud; a single native executable plus a Vue UI.
-*   🖥️ **Cross‑platform** – Windows, macOS, Linux.
-
----
-
-## 4. How It Works
-
-(This describes the UI flow. The core `GenerateShotgunOutput` Go function remains the primary backend logic for creating the text payload based on the selected root and exclusions.)
-
-1.  **Step 1: Prepare Context**
-    -   User selects a project folder.
-    -   The file tree is displayed in the `LeftSidebar`.
-    -   User can mark files/folders for exclusion.
-    -   The application automatically (or via a button) triggers context generation in Go (`GenerateShotgunOutput`).
-    -   The resulting context (tree + file contents) is stored in `shotgunPromptContext` and passed to `CentralPanel.vue`, which in turn makes it available to `Step2ComposePrompt.vue`.
-2.  **Step 2: Compose Prompt**
-    -   `Step2ComposePrompt.vue` is shown.
-    -   It displays the `shotgunPromptContext` (read-only).
-    -   User types their instructions for the LLM into another textarea (the prompt) and can edit custom rules.
-    -   User clicks "Execute Prompt" to run the configured LLM call.
-    -   `MainLayout.vue` sends the `shotgunPromptContext` and the user's prompt to the Go backend, which performs the actual LLM request.
-3.  **Step 3: Prompt History**
-    -   `Step3ExecutePrompt.vue` is shown.
-    -   Displays the chronological history of executed prompts, full payloads, responses, and optional API call metadata.
-    -   The stepper/sidebar button for Prompt History is always available so you can review or copy past executions without finishing the earlier steps first.
+### 🛠 Developer Experience
+*   **Prompt Templates:** Switch modes easily (e.g., "Find Bug" vs "Refactor" vs "Write Docs").
+*   **History Tracking:** Never lose a generated patch. Browse past prompts, responses, and raw API payloads.
+*   **Privacy Focused:** Your code goes only to the API provider you choose. No intermediate servers.
 
 ---
 
-## 5. Installation
+## 3. The Workflow
 
-### 5.1. Prerequisites
-*   **Go ≥ 1.20**   `go version`
-*   **Node.js LTS**  `node -v`
-*   **Wails CLI**    `go install github.com/wailsapp/wails/v2/cmd/wails@latest`
+Shotgun guides you through a 3-step process:
 
-### 5.2. Clone & Bootstrap
+### Step 1: Prepare Context
+*   **Select Project:** Open your local repository.
+*   **Filter:** Use the checkbox tree, `.gitignore`, or the **Auto-Context** button to define the scope.
+*   **Repo Scan:** Edit or load the high-level repository summary for better AI grounding.
+*   **Result:** A structured XML-like dump of your selected codebase.
+
+### Step 2: Compose & Execute
+*   **Define Task:** Describe what you need (e.g., "Refactor the auth middleware to use JWT").
+*   **Select Template:** Choose a persona (Dev, Architect, QA).
+*   **Execute:** Click **"Execute Prompt"** to send it to the configured LLM API immediately, OR copy the full payload to your clipboard for use in external tools like ChatGPT or Cursor.
+
+### Step 3: History & Apply
+*   **Review:** View the AI's response alongside your original prompt.
+*   **Diffs:** The AI output is optimized for `diff` generation.
+*   **Audit:** Inspect raw API calls for debugging or token usage analysis.
+
+---
+
+## 4. Installation
+
+### Prerequisites
+*   **Go ≥ 1.20**
+*   **Node.js LTS**
+*   **Wails CLI:** `go install github.com/wailsapp/wails/v2/cmd/wails@latest`
+
+### Clone & Build
 ```bash
 git clone https://github.com/glebkudr/shotgun_code
 cd shotgun_code
-go mod tidy           # backend deps
+
+# Install frontend dependencies
 cd frontend
-npm install           # Vue deps
+npm install
 cd ..
-```
 
-### 5.3. Run in Dev Mode
-```bash
+# Run in Development Mode (Hot Reload)
 wails dev
-```
-Hot‑reloads Vue; restart the command for Go code changes.
 
-### 5.4. Build a Release
-```bash
-wails build           # binaries land in build/bin/
+# Build Production Binary
+wails build
 ```
+*Binaries will be located in `build/bin/`.*
 
 ---
 
-## 6. Quick‑Start Workflow
+## 5. Configuration
 
-1.  Run `wails dev`. The app window will open.
-2.  **Step 1: Prepare Context**
-    - Click "Select Project Folder" and choose your repository root.
-    - In the left pane (`LeftSidebar`), expand folders and un-tick any items you wish to exclude from the context.
-    - Click the "Prepare Project Context & Proceed" button (typically in `Step1CopyStructure.vue` or a similar area for Step 1).
-    - The generated context (project tree and file contents) will be prepared internally.
-3.  **Step 2: Compose Prompt**
-    - The view will switch to Step 2 (`Step2ComposePrompt.vue`).
-    - The generated project context from Step 1 will be displayed (read-only).
-    - Enter your instructions for the LLM in the "Prompt Editor" textarea, adjust custom rules, and click "Execute Prompt".
-    - The backend makes the LLM request and the result is shown in a modal plus stored in history.
-4.  **Step 3: Prompt History**
-    - The Prompt History view (`Step3ExecutePrompt.vue`) can be opened at any time via the stepper/sidebar button.
-    - Browse previous executions, copy raw prompts/responses, or inspect saved API call payloads.
-5.  You can navigate between completed steps using the top `HorizontalStepper` or the `LeftSidebar` step list, and the Prompt History button is always enabled for quick access.
+### LLM Setup
+Click the **Settings** (gear icon) in the app to configure providers:
+1.  **Provider:** Select OpenAI, Gemini, or OpenRouter.
+2.  **API Key:** Paste your key (stored locally).
+3.  **Model:** Select your preferred model (e.g., `gpt-4o`, `gemini-2.5-pro`, `claude-3.5-sonnet`).
+
+### Custom Rules
+You can define global excludes (like `node_modules`, `dist`, `.git`) and custom prompt instructions that are appended to every request.
 
 ---
 
-## 7. Shotgun Output Anatomy
-```text
-app/
-├── main.go
-├── app.go
-└── frontend/
-    ├── App.vue
-    └── components/
-        └── FileTree.vue (example)
+## 6. Output Format
 
-<file path="main.go">
+Shotgun generates context optimized for LLM parsing:
+
+```xml
+<file path="backend/main.go">
 package main
 ...
 </file>
 
-<file path="frontend/components/FileTree.vue">
+<file path="frontend/src/App.vue">
 <template>
 ...
 </template>
 </file>
 ```
-*   **Tree View** – quick visual map for you & the LLM.
-*   **XML-like File Blocks** – <file path="path/to/file">...</file> for easy parsing by models.
+
+This format allows models to understand file boundaries perfectly, enabling accurate multi-file refactoring suggestions.
 
 ---
 
-## 8. Best Practices
-*   **Trim the noise** – exclude lock files, vendored libs, generated assets.
-    Less tokens → cheaper & more accurate completions.
-*   **Ask for diffs, not whole files** – keeps responses concise.
-*   **Iterate** – generate → ask → patch → re‑generate if needed.
-*   **Watch token limits** – even million‑token models have practical caps.
-    Use Shotgun scopes (root folder vs subfolder) to stay under budget.
+## 7. ⚖️ License & Usage
 
----
+My name is Gleb Curly, and I am an indie developer making software for a living.
 
-## 9. Troubleshooting
+Shotgun is developed and maintained by **Curly's Technology Tmi**. 
 
-| Symptom                     | Fix                                                          |
-|-----------------------------|--------------------------------------------------------------|
-| `wails: command not found`  | Ensure `$GOROOT/bin` or `$HOME/go/bin` is on `PATH`.         |
-| Blank window on `wails dev` | Check Node version & reinstall frontend deps.              |
-| Output too large            | Split Shotgun runs by subdirectory; or exclude binaries/tests. |
-
----
-
-## 10. Roadmap
-
-- ✅ **Step 1: Prepare Context**  
-  Basic ability to select a project, exclude items, and generate a structured text context.
-
-- ✅ **Step 2: Compose Prompt**  
-  - ✅ **Watchman to hot-reload TreeView**  
-  - ✅ **Custom rules**
-
-- ☐ **Step 3: Prompt History**  
-  Dedicated view for browsing, copying, and auditing executed prompts, responses, and API call metadata.
-
-- ☐ **Next improvements**  
-  - ☐ Direct API bridge to send output to OpenAI / Gemini without copy-paste  
-  - ☐ CLI version for headless pipelines  
-  - **Watch token limits** – even million-token models have practical caps. Use Shotgun scopes (root folder vs subfolder) to stay under budget.  
-
----
-
-## 11. Contributing
-PRs and issues are welcome!
-Please format Go code with `go fmt` and follow Vue 3 style guidelines.
-
-**Important**: By submitting a Pull Request, you agree to transfer the copyright of your code to Curly's Technology Tmi. See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
-
----
-
-## 12. ⚖️ License & Usage
-
-Shotgun is developed and maintained by **Curly's Technology Tmi**.
-
-This project uses a dual-licensing model to ensure sustainable development:
+This project uses a **Community License** model:
 
 ### 1. Free for Small Teams & Non-Commercial Use
-
 You can use Shotgun for free (including modification and internal use) if:
-
 - Your company/team generates **less than $1M USD** in annual revenue.
-
-- You do **not** use the code to build a public product that directly competes with Shotgun (e.g., releasing a "Shotgun Clone").
-
-See the [LICENSE.md](LICENSE.md) file for details.
+- You do **not** use the code to build a competing public product.
 
 ### 2. Commercial License (Enterprise)
+If your annual revenue exceeds **$1M USD**, you are required to purchase a commercial license with a pretty reasonable price.
 
-If your annual revenue exceeds **$1M USD**, you are required to purchase a commercial license to use Shotgun in your products or infrastructure.
+Please contact me at **glebkudr@gmail.com** for pricing.
 
-Please contact us at **glebkudr@gmail.com** for pricing and terms.
-
-### 3. Contributing
-
-We welcome contributions! Please note that by submitting a Pull Request, you agree to transfer the copyright of your code to Curly's Technology Tmi. Check [CONTRIBUTING.md](CONTRIBUTING.md) for more info.
+See [LICENSE.md](LICENSE.md) for the full legal text.
 
 ---
 
-Shotgun – load, aim, blast your code straight into the mind of an LLM.
-Iterate faster. Ship better. 
+*Shotgun – Load, Aim, Blast your code into the future.*
