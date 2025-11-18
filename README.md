@@ -69,24 +69,17 @@ hence the name.
     -   The file tree is displayed in the `LeftSidebar`.
     -   User can mark files/folders for exclusion.
     -   The application automatically (or via a button) triggers context generation in Go (`GenerateShotgunOutput`).
-    -   The resulting context (tree + file contents) is stored in `shotgunPromptContext` and passed to `CentralPanel.vue`, which in turn makes it available to `Step2GenerateDiff.vue`.
+    -   The resulting context (tree + file contents) is stored in `shotgunPromptContext` and passed to `CentralPanel.vue`, which in turn makes it available to `Step2ComposePrompt.vue`.
 2.  **Step 2: Compose Prompt**
-    -   `Step2GenerateDiff.vue` is shown.
-    -   It displays the `shotgunPromptContext` (likely in a read-only textarea).
-    -   User types their instructions for the LLM into another textarea (the prompt).
-    -   User clicks "Compose Prompt" (was "Generate Diff").
-    -   `MainLayout.vue` (simulates) sending the `shotgunPromptContext` and the user's prompt to an LLM.
-    -   (Simulated) LLM returns a diff, which is then displayed in the "Diff Viewer" section of `Step2GenerateDiff.vue`.
-3.  **Step 3: Execute Prompt**
-    -   `Step3ExecuteDiff.vue` is shown.
-    -   User clicks "Execute Prompt" (was "Execute Diff").
-    -   `MainLayout.vue` (simulates) the "execution" of this prompt/diff. This step is more conceptual in the current stubbed implementation but would represent running or applying the changes indicated by the LLM.
-    -   Logs appear in the step-specific console within `Step3ExecuteDiff.vue` and/or the `BottomConsole.vue`.
-4.  **Step 4: Apply Patch**
-    -   `Step4ApplyPatch.vue` is shown.
-    -   User interacts with a (currently stubbed) patch editor.
-    -   User clicks "Apply Selected" or "Apply All & Finish".
-    -   `MainLayout.vue` (simulates) applying these patches.
+    -   `Step2ComposePrompt.vue` is shown.
+    -   It displays the `shotgunPromptContext` (read-only).
+    -   User types their instructions for the LLM into another textarea (the prompt) and can edit custom rules.
+    -   User clicks "Execute Prompt" to run the configured LLM call.
+    -   `MainLayout.vue` sends the `shotgunPromptContext` and the user's prompt to the Go backend, which performs the actual LLM request.
+3.  **Step 3: Prompt History**
+    -   `Step3ExecutePrompt.vue` is shown.
+    -   Displays the chronological history of executed prompts, full payloads, responses, and optional API call metadata.
+    -   The stepper/sidebar button for Prompt History is always available so you can review or copy past executions without finishing the earlier steps first.
 
 ---
 
@@ -129,20 +122,14 @@ wails build           # binaries land in build/bin/
     - Click the "Prepare Project Context & Proceed" button (typically in `Step1CopyStructure.vue` or a similar area for Step 1).
     - The generated context (project tree and file contents) will be prepared internally.
 3.  **Step 2: Compose Prompt**
-    - The view will switch to Step 2 (`Step2GenerateDiff.vue`).
-    - The generated project context from Step 1 will be displayed (usually read-only).
-    - Enter your instructions for the LLM in the "Prompt Editor" textarea.
-    - Click "Compose Prompt".
-    - A (mock) diff will be generated and shown in the "Diff Viewer".
-4.  **Step 3: Execute Prompt**
-    - The view will switch to Step 3 (`Step3ExecuteDiff.vue`).
-    - Click "Execute Prompt".
-    - (Mock) execution logs will appear in the console areas.
-5.  **Step 4: Apply Patch**
-    - The view will switch to Step 4 (`Step4ApplyPatch.vue`).
-    - Interact with the (stubbed) patch editor.
-    - Click "Apply Selected" or "Apply All & Finish" to (simulate) completing the process.
-6.  You can navigate between completed steps using the top `HorizontalStepper` or the `LeftSidebar` step list.
+    - The view will switch to Step 2 (`Step2ComposePrompt.vue`).
+    - The generated project context from Step 1 will be displayed (read-only).
+    - Enter your instructions for the LLM in the "Prompt Editor" textarea, adjust custom rules, and click "Execute Prompt".
+    - The backend makes the LLM request and the result is shown in a modal plus stored in history.
+4.  **Step 3: Prompt History**
+    - The Prompt History view (`Step3ExecutePrompt.vue`) can be opened at any time via the stepper/sidebar button.
+    - Browse previous executions, copy raw prompts/responses, or inspect saved API call payloads.
+5.  You can navigate between completed steps using the top `HorizontalStepper` or the `LeftSidebar` step list, and the Prompt History button is always enabled for quick access.
 
 ---
 
@@ -201,11 +188,10 @@ package main
   - ✅ **Watchman to hot-reload TreeView**  
   - ✅ **Custom rules**
 
-- ☐ **Step 3: Execute Prompt**  
-  "Executing" the prompt and showing logs.
+- ☐ **Step 3: Prompt History**  
+  Dedicated view for browsing, copying, and auditing executed prompts, responses, and API call metadata.
 
-- ☐ **Step 4: Apply Patch**  
-  Enable applying patches inside Shotgun.  
+- ☐ **Next improvements**  
   - ☐ Direct API bridge to send output to OpenAI / Gemini without copy-paste  
   - ☐ CLI version for headless pipelines  
   - **Watch token limits** – even million-token models have practical caps. Use Shotgun scopes (root folder vs subfolder) to stay under budget.  
@@ -216,10 +202,35 @@ package main
 PRs and issues are welcome!
 Please format Go code with `go fmt` and follow Vue 3 style guidelines.
 
+**Important**: By submitting a Pull Request, you agree to transfer the copyright of your code to Curly's Technology Tmi. See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
+
 ---
 
-## 12. License
-Custom MIT-like – see `LICENSE.md` file.
+## 12. ⚖️ License & Usage
+
+Shotgun is developed and maintained by **Curly's Technology Tmi**.
+
+This project uses a dual-licensing model to ensure sustainable development:
+
+### 1. Free for Small Teams & Non-Commercial Use
+
+You can use Shotgun for free (including modification and internal use) if:
+
+- Your company/team generates **less than $1M USD** in annual revenue.
+
+- You do **not** use the code to build a public product that directly competes with Shotgun (e.g., releasing a "Shotgun Clone").
+
+See the [LICENSE.md](LICENSE.md) file for details.
+
+### 2. Commercial License (Enterprise)
+
+If your annual revenue exceeds **$1M USD**, you are required to purchase a commercial license to use Shotgun in your products or infrastructure.
+
+Please contact us at **glebkudr@gmail.com** for pricing and terms.
+
+### 3. Contributing
+
+We welcome contributions! Please note that by submitting a Pull Request, you agree to transfer the copyright of your code to Curly's Technology Tmi. Check [CONTRIBUTING.md](CONTRIBUTING.md) for more info.
 
 ---
 

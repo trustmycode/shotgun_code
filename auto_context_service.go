@@ -212,11 +212,46 @@ func normalizeRelativePath(rel string) string {
 	if rel == "" || rel == "." {
 		return ""
 	}
-
 	rel = strings.TrimPrefix(rel, "./")
 	rel = filepath.ToSlash(rel)
 	rel = strings.TrimPrefix(rel, "/")
 	return rel
+}
+
+// normalizeCandidateForRoot brings an LLM-returned path into the canonical
+// "relative to rootDir" form. It accepts either strictly relative paths like
+// "frontend/src/..." or paths prefixed with the project root name, e.g.:
+//   "shotgun_code/frontend/src/..." when rootDir == ".../shotgun_code".
+func normalizeCandidateForRoot(rootDir, candidate string) string {
+	candidate = normalizeRelativePath(candidate)
+	if candidate == "" {
+		return ""
+	}
+
+	rootBase := filepath.Base(rootDir)
+	if rootBase == "" || rootBase == "." {
+		return candidate
+	}
+	rootBase = filepath.ToSlash(rootBase)
+
+	// Common case: "shotgun_code/frontend/src/..." → "frontend/src/..."
+	prefix := rootBase + "/"
+	if strings.HasPrefix(candidate, prefix) {
+		return strings.TrimPrefix(candidate, prefix)
+	}
+
+	// Also accept "./shotgun_code/..." just in case the model prepends "./".
+	dotPrefix := "./" + prefix
+	if strings.HasPrefix(candidate, dotPrefix) {
+		return strings.TrimPrefix(candidate, dotPrefix)
+	}
+
+	// If the candidate is exactly the root name, it is not a file path.
+	if candidate == rootBase {
+		return ""
+	}
+
+	return candidate
 }
 
 func resolveLLMSelection(rootDir string, candidates []string) ([]string, error) {
@@ -225,7 +260,7 @@ func resolveLLMSelection(rootDir string, candidates []string) ([]string, error) 
 	}
 	selected := make(map[string]struct{})
 	for _, candidate := range candidates {
-		candidate = normalizeRelativePath(candidate)
+		candidate = normalizeCandidateForRoot(rootDir, candidate)
 		if candidate == "" {
 			continue
 		}

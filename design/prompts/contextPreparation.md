@@ -30,7 +30,7 @@ Rules:
   {{ .USER_TASK }}
 - **Repo scan / architecture notes (may be empty):**  
   {{ .CURRENT_UNDERSTANDING }}
-- **Project file tree (directories only, already filtered by user):**
+- **Project file tree (directories only, subject to ignore rules):**
 ```
 {{ .FILE_TREE }}
 ```

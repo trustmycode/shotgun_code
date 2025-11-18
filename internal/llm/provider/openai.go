@@ -134,7 +134,7 @@ func (o *openAIProvider) generateViaResponsesAPI(ctx context.Context, prompt str
 		},
 		// Явно ограничиваем длину ответа, чтобы модель уверенно возвращала сообщение.
 		// Значение можно будет вынести в настройки при необходимости.
-		MaxOutputTokens: 4096,
+		MaxOutputTokens: 65536,
 	}
 
 	// Build sanitized debug view BEFORE marshalling real payload.
@@ -216,10 +216,10 @@ func (o *openAIProvider) generateViaResponsesAPI(ctx context.Context, prompt str
 }
 
 // extractTextFromResponsesOutput tries to handle current JSON shapes of the Responses API:
-// 1) output: [ { "type": "output_text", "text": "..." } ]
-// 2) output: [ { "type": "message", "role": "assistant", "content": [
-//        { "type": "output_text", "text": "..." }, ...
-//    ] } ]
+//  1. output: [ { "type": "output_text", "text": "..." } ]
+//  2. output: [ { "type": "message", "role": "assistant", "content": [
+//     { "type": "output_text", "text": "..." }, ...
+//     ] } ]
 func extractTextFromResponsesOutput(raw json.RawMessage) (string, error) {
 	if len(raw) == 0 {
 		return "", errors.New("openai responses API response did not contain any output")
@@ -292,4 +292,3 @@ func (o *openAIProvider) buildGenericAPICallDebug() string {
 	}
 	return string(data)
 }
-

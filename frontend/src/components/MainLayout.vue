@@ -3,6 +3,7 @@
     <HorizontalStepper :current-step="currentStep" :steps="steps" @navigate="navigateToStep" :key="`hstepper-${currentStep}-${steps.map(s=>s.completed).join('')}`" />
     <div class="flex flex-1 overflow-hidden">
       <LeftSidebar 
+        v-if="currentStep !== 3"
         :current-step="currentStep" 
         :steps="steps" 
         :project-root="projectRoot"
@@ -25,12 +26,7 @@
                     :platform="platform"
                     :user-task="userTask"
                     :rules-content="rulesContent"
-                    :split-diffs="splitDiffs"
-                    :is-loading-split-diffs="isLoadingSplitDiffs"
                     :final-prompt="finalPrompt"
-                    :split-line-limit="splitLineLimitValue"
-                    :shotgun-git-diff="shotgunGitDiff"
-                    :split-line-limit-value="splitLineLimitValue"
                     :has-active-llm-key="hasActiveLlmKey"
                     :is-auto-context-loading="isAutoContextLoading"
                     @auto-context="requestAutoContextSelection"
@@ -39,8 +35,6 @@
                     @update-composed-prompt="handleComposedPromptUpdate"
                     @update:user-task="handleUserTaskUpdate"
                     @update:rules-content="handleRulesContentUpdate"
-                    @update:shotgunGitDiff="handleShotgunGitDiffUpdate"
-                    @update:splitLineLimit="handleSplitLineLimitUpdate"
                     ref="centralPanelRef" />
     </div>
     <div 
@@ -75,7 +69,6 @@ import {
   StopFileWatcher,
   SetUseGitignore,
   SetUseCustomIgnore,
-  SplitShotgunDiff,
   GetLlmSettings,
   HasActiveLlmKey,
   GetAutoContextButtonTexture,
@@ -86,8 +79,7 @@ const currentStep = ref(1);
 const steps = ref([
   { id: 1, title: 'Prepare Context', completed: false, description: 'Select project folder, review files, and generate the initial project context for the LLM.' },
   { id: 2, title: 'Compose Prompt', completed: false, description: 'Provide a prompt to the LLM based on the project context to generate a code diff.' },
-  { id: 3, title: 'Execute Prompt', completed: false, description: 'Paste a large shotgunDiff and split it into smaller, manageable parts.' },
-  { id: 4, title: 'Apply Patch', completed: false, description: 'Copy and apply the smaller diff parts to your project.' },
+  { id: 3, title: 'Prompt History', completed: false, description: 'Review previously executed prompts and responses.', alwaysAccessible: true },
 ]);
 
 const logMessages = ref([]);
@@ -123,15 +115,10 @@ const manuallyToggledNodes = reactive(new Map());
 const isGeneratingContext = ref(false);
 const generationProgressData = ref({ current: 0, total: 0 });
 const isFileTreeLoading = ref(false);
-const composedLlmPrompt = ref(''); // To store the prompt from Step 2
 const platform = ref('unknown'); // To store OS platform (e.g., 'darwin', 'windows', 'linux')
 const userTask = ref('');
 const rulesContent = ref('');
 const finalPrompt = ref('');
-const isLoadingSplitDiffs = ref(false);
-const splitDiffs = ref([]);
-const shotgunGitDiff = ref('');
-const splitLineLimitValue = ref(0); // Add new state variable
 const hasActiveLlmKey = ref(false);
 const isAutoContextLoading = ref(false);
 const autoContextButtonTexture = ref('');
@@ -156,8 +143,6 @@ async function selectProjectFolderHandler() {
       fileTree.value = [];
       
       await loadFileTree(selectedDir);
-
-      splitDiffs.value = []; // Clear any previous splits when new project selected
 
       if (!isFileTreeLoading.value && projectRoot.value) {
          debouncedTriggerShotgunContextGeneration();
@@ -261,6 +246,32 @@ function buildExcludedPathsPayload() {
   const excluded = [];
   collectTrulyExcludedPaths(fileTree.value, excluded);
   return excluded;
+}
+
+function collectIgnoredPathsOnly(nodes, target) {
+  if (!nodes || nodes.length === 0) return;
+  nodes.forEach((node) => {
+    const ignoredByGit = useGitignore.value && node.isGitignored;
+    const ignoredByCustom = useCustomIgnore.value && node.isCustomIgnored;
+    const ignoredByRules = ignoredByGit || ignoredByCustom;
+
+    if (ignoredByRules && node.relPath) {
+      target.push(node.relPath);
+      // Children of ignored directories are not present in the tree,
+      // so we don't need to recurse in the ignored branch.
+      return;
+    }
+
+    if (node.children && node.children.length > 0) {
+      collectIgnoredPathsOnly(node.children, target);
+    }
+  });
+}
+
+function buildIgnoredPathsPayloadForAutoContext() {
+  const ignored = [];
+  collectIgnoredPathsOnly(fileTree.value, ignored);
+  return ignored;
 }
 
 function normalizeRelPath(value) {
@@ -380,7 +391,17 @@ function navigateToStep(stepId) {
   const targetStep = steps.value.find(s => s.id === stepId);
   if (!targetStep) return;
 
-  if (targetStep.completed || stepId === currentStep.value) {
+  if (stepId === currentStep.value) {
+    currentStep.value = stepId;
+    return;
+  }
+
+  if (targetStep.alwaysAccessible) {
+    currentStep.value = stepId;
+    return;
+  }
+
+  if (targetStep.completed) {
     currentStep.value = stepId;
     return;
   }
@@ -394,7 +415,6 @@ function navigateToStep(stepId) {
 }
 
 function handleComposedPromptUpdate(prompt) {
-  composedLlmPrompt.value = prompt;
   finalPrompt.value = prompt;
   addLog(`MainLayout: Composed LLM prompt updated (${prompt.length} chars).`, 'debug', 'bottom');
   // Logic to mark step 2 as complete can go here
@@ -411,64 +431,14 @@ async function handleStepAction(actionName, payload) {
   addLog(`Action: ${actionName} triggered from step ${currentStep.value}.`, 'info', 'bottom');
   if (payload && actionName === 'composePrompt') {
     addLog(`Prompt for diff: "${payload.prompt}"`, 'info', 'bottom');
+    return;
   }
 
-  const currentStepObj = steps.value.find(s => s.id === currentStep.value);
-
-  switch (actionName) {
-    case 'executePrompt':
-      if (!composedLlmPrompt.value) {
-        addLog("Cannot execute prompt: Prompt from Step 2 is empty.", 'warn', 'both');
-        return;
-      }
-      addLog(`Simulating backend: Executing prompt (LLM call)... \nPrompt Preview (first 100 chars): "${composedLlmPrompt.value.substring(0,100)}..."`, 'info', 'step');
-      // Here, you would actually send composedLlmPrompt.value to an LLM
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      addLog('Backend: LLM call simulated. (Mocked response/diff would be processed here).', 'info', 'step');
-      if (currentStepObj) currentStepObj.completed = true;
-      // For now, just navigate to Step 4, as Step 3's "execution" is conceptual.
-      // In a real app, Step 3 might display LLM output before proceeding.
-      navigateToStep(4); 
-      break;
-    case 'executePromptAndSplitDiff': // Handle the actual splitting action
-      if (!payload || !payload.gitDiff || payload.lineLimit <= 0) {
-        addLog("Invalid payload for splitting diff.", 'error', 'bottom');
-        return;
-      }
-      addLog(`Splitting diff (approx ${payload.lineLimit} lines per split)...`, 'info', 'bottom');
-      isLoadingSplitDiffs.value = true;
-      splitDiffs.value = []; // Clear previous splits
-      shotgunGitDiff.value = payload.gitDiff;
-      splitLineLimitValue.value = payload.lineLimit; // Store the line limit
-      try {
-        const result = await SplitShotgunDiff(payload.gitDiff, payload.lineLimit);
-        splitDiffs.value = result;
-        addLog(`Diff split into ${result.length} parts.`, 'success', 'bottom');
-        
-        if (currentStepObj) currentStepObj.completed = true;
-        navigateToStep(4);
-
-      } catch (err) {
-        const errorMsg = `Error splitting diff: ${err.message || err}`;
-        addLog(errorMsg, 'error', 'bottom');
-      } finally {
-        isLoadingSplitDiffs.value = false;
-      }
-      break;
-    case 'applySelectedPatches':
-    case 'applyAllPatches':
-      addLog(`Simulating backend: Applying patches (${actionName})...`, 'info', 'bottom');
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      addLog('Backend: Patches applied. Process complete!', 'info', 'bottom');
-      if (currentStepObj) currentStepObj.completed = true;
-      break;
-    case 'finishSplitting':
-      addLog("Finished with split diffs.", 'info', 'bottom');
-      if (currentStepObj) currentStepObj.completed = true;
-      break;
-    default:
-      addLog(`Unknown action: ${actionName}`, 'error', 'bottom');
+  if (!actionName) {
+    return;
   }
+
+  addLog(`No handler registered for action: ${actionName}`, 'debug', 'bottom');
 }
 
 const isResizing = ref(false);
@@ -667,15 +637,6 @@ function handleRulesContentUpdate(val) {
   }
 }
 
-// Add handlers for the new updates
-function handleShotgunGitDiffUpdate(val) {
-  shotgunGitDiff.value = val;
-}
-
-function handleSplitLineLimitUpdate(val) {
-  splitLineLimitValue.value = val;
-}
-
 async function refreshLlmSettingsState() {
   try {
     llmSettings.value = await GetLlmSettings();
@@ -752,7 +713,9 @@ async function requestAutoContextSelection() {
   isAutoContextLoading.value = true;
   addLog('Requesting auto context selection…', 'info', 'bottom');
   try {
-    const excludedPathsArray = buildExcludedPathsPayload();
+    // For Auto context we want the project tree that is NOT filtered by user selections,
+    // only reduced by .gitignore and ignore.glob rules (when enabled).
+    const excludedPathsArray = buildIgnoredPathsPayloadForAutoContext();
     const selection = await RequestAutoContextSelection(
       projectRoot.value,
       excludedPathsArray,

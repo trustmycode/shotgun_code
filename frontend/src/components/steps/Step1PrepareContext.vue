@@ -18,7 +18,54 @@
     <!-- Content Area (Textarea + Copy Button OR Error Message OR Placeholder) -->
     <div v-else-if="projectRoot" class="mt-0 flex-grow flex flex-col space-y-4">
       <div>
-        <label for="user-task-ai-step1" class="block text-sm font-medium text-gray-700 mb-1">Your task for AI:</label>
+        <div class="flex items-center justify-between mb-1">
+          <label for="user-task-ai-step1" class="block text-sm font-medium text-gray-700">Your task for AI:</label>
+          <div class="flex items-center space-x-4">
+            <div
+              class="flex items-center space-x-2 text-xs text-gray-600"
+              title="Repo scan is attached to your context extraction prompt to better understand the repository structure and extract the right context."
+            >
+              <label class="flex items-center space-x-1 cursor-pointer hover:text-gray-900">
+                <input
+                  type="checkbox"
+                  v-model="includeRepoScan"
+                  class="h-3.5 w-3.5 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                />
+                <span>Use repo scan:</span>
+                <span class="font-mono bg-gray-100 px-1 rounded text-gray-500">{{ repoScanTokensLabel }}</span>
+              </label>
+              <button
+                type="button"
+                class="text-blue-600 hover:underline"
+                @click="openRepoScanEditor"
+              >
+                edit
+              </button>
+            </div>
+            <div class="h-4 w-px bg-gray-300"></div>
+            <div class="flex items-center space-x-2">
+              <button
+                class="auto-context-button"
+                :class="isAutoContextEnabled ? 'auto-context-button--enabled' : 'auto-context-button--disabled'"
+                :disabled="!isAutoContextEnabled"
+                data-testid="auto-context-btn"
+                @click="emit('auto-context')"
+              >
+                <span>
+                  {{ props.isAutoContextLoading ? 'Auto selecting…' : 'Auto context' }}
+                </span>
+              </button>
+              <button
+                class="text-xs text-blue-600 hover:underline"
+                type="button"
+                data-testid="setup-api-key-link"
+                @click="emit('open-llm-settings')"
+              >
+                Setup model
+              </button>
+            </div>
+          </div>
+        </div>
         <textarea
           id="user-task-ai-step1"
           v-model="localUserTask"
@@ -29,52 +76,8 @@
       </div>
 
       <div v-if="generatedContext && !generatedContext.startsWith('Error:')" class="flex-grow flex flex-col">
-        <div class="flex items-center justify-between mb-2">
-          <h3 class="text-md font-medium text-gray-700">Generated Project Context:</h3>
-          <div class="flex items-center space-x-2">
-            <button
-              class="auto-context-button"
-              :class="isAutoContextEnabled ? 'auto-context-button--enabled' : 'auto-context-button--disabled'"
-              :disabled="!isAutoContextEnabled"
-              data-testid="auto-context-btn"
-              @click="emit('auto-context')"
-            >
-              <span>
-                {{ props.isAutoContextLoading ? 'Auto selecting…' : 'Auto context' }}
-              </span>
-            </button>
-            <button
-              class="text-xs text-blue-600 hover:underline"
-              type="button"
-              data-testid="setup-api-key-link"
-              @click="emit('open-llm-settings')"
-            >
-              Setup model
-            </button>
-          </div>
-        </div>
-        <div
-          class="flex items-center justify-end mb-2 text-xs text-gray-600"
-          title="Repo scan is attached to your context extraction prompt to better understand the repository structure and extract the right context. Create it on shotgunpro.dev"
-        >
-          <label class="flex items-center space-x-2 cursor-pointer">
-            <input
-              type="checkbox"
-              v-model="includeRepoScan"
-              class="h-3 w-3 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-            />
-            <span>Use repo scan:</span>
-            <span class="font-mono">
-              {{ repoScanTokensLabel }}
-            </span>
-            <button
-              type="button"
-              class="text-blue-600 hover:underline ml-1"
-              @click="openRepoScanEditor"
-            >
-              edit
-            </button>
-          </label>
+        <div class="flex items-center justify-between mb-1">
+          <h3 class="text-sm font-semibold text-gray-700">Generated Project Context:</h3>
         </div>
         <textarea
           :value="generatedContext"

@@ -142,7 +142,9 @@ function handleCancelCustomRules() {
 function canNavigateToStep(stepId) {
   if (stepId === props.currentStep) return true;
   const targetStep = props.steps.find(s => s.id === stepId);
-  if (targetStep && targetStep.completed) return true;
+  if (!targetStep) return false;
+  if (targetStep.alwaysAccessible) return true;
+  if (targetStep.completed) return true;
   const firstUncompletedStep = props.steps.find(s => !s.completed);
   const firstUncompletedStepId = firstUncompletedStep ? firstUncompletedStep.id : undefined;
   return stepId === firstUncompletedStepId || (firstUncompletedStepId === undefined && targetStep); // Allow any if all completed

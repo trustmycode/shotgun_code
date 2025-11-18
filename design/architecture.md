@@ -151,23 +151,17 @@ The application operates as a sequence of steps coordinated by `MainLayout.vue`:
 2.  **Step 2 (Compose Prompt)**:
     -   `CentralPanel.vue` renders `Step2ComposePrompt.vue`.
     -   `shotgunPromptContext` (as `fileListContext`), `userTask`, and `rulesContent` are used to build `finalPrompt` based on the selected template.
-    -   The user enters `userTask` and can edit `rulesContent`.
+    -   The user enters `userTask`, can edit `rulesContent`, and executes the prompt via the LLM integration.
     -   `finalPrompt` is updated automatically.
     -   Step 2 is considered completed when `finalPrompt` is non‑empty and Step 1 is completed.
 
-3.  **Step 3 (Execute Prompt)**:
-    -   `CentralPanel.vue` renders `Step3ExecutePrompt.vue` (currently a placeholder with instructions).
-    -   Conceptually, this is where `finalPrompt` would be sent to an LLM and a response (for example, a diff) would be received.
-    -   In the current placeholder implementation, Step 3 is conditionally treated as completed to allow moving forward.
-
-4.  **Step 4 (Apply Patch)**:
-    -   `CentralPanel.vue` renders `Step4ApplyPatch.vue` (placeholder that imitates a patch editor).
-    -   The user simulates applying patches.
-    -   Step 4 is considered completed after this "application".
+3.  **Step 3 (Prompt History)**:
+    -   `CentralPanel.vue` renders `Step3ExecutePrompt.vue`, which displays previously executed prompts, responses, and API call payloads.
+    -   This step is accessible at any time (its navigation button is always enabled) so that users can copy or audit past executions without completing earlier stages first.
 
 **Navigation and state:**
 
--   `HorizontalStepper.vue` and `LeftSidebar.vue` (step list) provide navigation. The user can go back to completed steps or move to the next incomplete one.
+-   `HorizontalStepper.vue` and `LeftSidebar.vue` (step list) provide navigation. The user can go back to completed steps or move to the next incomplete one, and the Prompt History step is always available.
 -   The `completed` status of each step in `MainLayout.vue` controls navigation and visual state.
 -   The `projectFilesChanged` event from `Watchman` triggers reloading of `fileTree` and, consequently, regeneration of `shotgunPromptContext`, provided the system is not busy with other operations.
 

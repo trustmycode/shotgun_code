@@ -1,14 +1,47 @@
-Custom License Agreement
-Copyright (c) [2025] [Gleb Curly]
+SHOTGUN COMMUNITY LICENSE AGREEMENT
 
-Grant of License
-Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+Version 1.0
 
-Attribution and Subscription: Each individual developer who utilizes, modifies, or contributes to this Software, either directly or as part of a team, must be an active follower of the original author's account on X (formerly Twitter): https://x.com/GlebCurly. This condition applies for the entire duration the developer works with the Software. Verification of compliance may be requested by the copyright holder.
+Copyright (c) 2025 Curly's Technology Tmi, Helsinki. All rights reserved.
 
-License Inclusion: The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+This License governs the use of the accompanying software known as "Shotgun" (the "Software"). By downloading, accessing, or using the Software, you agree to be bound by the terms of this License.
 
-Alignment with Vibe: Users of the Software are expected to align with and promote the core values associated with the 'Vibe' fostered by the original author and the project community.
+1. DEFINITIONS
 
-Disclaimer of Warranty
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+   "Licensor" refers to Curly's Technology Tmi.
+
+   "Licensee" refers to the individual or entity using the Software.
+
+   "Revenue Limit" refers to a gross annual revenue (or equivalent funding) of less than $1,000,000 USD (One Million US Dollars) per year.
+
+2. GRANT OF LICENSE
+
+   Subject to the terms and conditions of this License, Licensor hereby grants Licensee a non-exclusive, royalty-free, worldwide, non-transferable license to use, modify, and copy the Software, provided that:
+
+   
+
+   (a) The Licensee meets the condition of being under the Revenue Limit at all times during the use of the Software.
+
+   (b) The Licensee does not use the Software to create, distribute, or host a product or service that is substantially similar to the Software and is offered to third parties in competition with the Licensor ("Competitive Product").
+
+3. COMMERCIAL LICENSE REQUIREMENT
+
+   If the Licensee is an entity or individual with an annual gross revenue (or funding) exceeding the Revenue Limit ($1,000,000 USD), this Community License does not apply. Such entities must purchase a Commercial License from the Licensor to use the Software.
+
+   
+
+   To inquire about a Commercial License, please contact: glebkudr@gmail.com
+
+4. RESTRICTIONS
+
+   - You may not remove or alter any copyright notices or license information stored in the Software.
+
+   - You may not use the Software in a manner that violates any applicable laws.
+
+5. DISCLAIMER OF WARRANTY
+
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE LICENSOR BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+6. GOVERNING LAW
+
+   This License shall be governed by and construed in accordance with the laws of Finland.

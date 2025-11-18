@@ -30,17 +30,15 @@
       @update:rulesContent="(val) => emit('update:rulesContent', val)" 
       @open-llm-settings="emit('open-llm-settings')"
     />
-    <Step3ExecutePrompt v-if="currentStep === 3" @action="handleAction" ref="step3Ref" :initial-git-diff="initialGitDiff" :initial-split-line-limit="initialSplitLineLimit" @update:shotgunGitDiff="(val) => emit('update:shotgunGitDiff', val)" @update:splitLineLimit="(val) => emit('update:splitLineLimit', val)" />
-    <Step4ApplyPatch v-if="currentStep === 4" @action="handleAction" :split-diffs="props.splitDiffs" :is-loading="props.isLoadingSplitDiffs" :platform="props.platform" :split-line-limit="initialSplitLineLimit" />
+    <Step3ExecutePrompt v-if="currentStep === 3" ref="step3Ref" />
   </main>
 </template>
 
 <script setup>
-import { defineProps, defineEmits, ref, computed, watch } from 'vue';
+import { defineProps, defineEmits, ref } from 'vue';
 import Step1CopyStructure from './steps/Step1PrepareContext.vue';
 import Step2ComposePrompt from './steps/Step2ComposePrompt.vue';
 import Step3ExecutePrompt from './steps/Step3ExecutePrompt.vue';
-import Step4ApplyPatch from './steps/Step4ApplyPatch.vue';
 
 const props = defineProps({
   currentStep: { type: Number, required: true },
@@ -52,25 +50,11 @@ const props = defineProps({
   userTask: { type: String, default: '' },
   rulesContent: { type: String, default: '' },
   finalPrompt: { type: String, default: '' },
-  splitDiffs: { type: Array, default: () => [] },
-  isLoadingSplitDiffs: { type: Boolean, default: false },
-  shotgunGitDiff: { type: String, default: '' },
-  splitLineLimitValue: { type: Number, default: 0 },
   hasActiveLlmKey: { type: Boolean, default: false },
   isAutoContextLoading: { type: Boolean, default: false }
 });
 
-const initialGitDiff = computed(() => {
-  const value = props.shotgunGitDiff || '';
-    return value;
-});
-
-const initialSplitLineLimit = computed(() => {
-  const value = props.splitLineLimitValue || 0;
-    return value;
-});
-
-const emit = defineEmits(['stepAction', 'update-composed-prompt', 'update:userTask', 'update:rulesContent', 'update:shotgunGitDiff', 'update:splitLineLimit', 'auto-context', 'open-llm-settings']);
+const emit = defineEmits(['stepAction', 'update-composed-prompt', 'update:userTask', 'update:rulesContent', 'auto-context', 'open-llm-settings']);
 
 const step2Ref = ref(null);
 const step3Ref = ref(null);

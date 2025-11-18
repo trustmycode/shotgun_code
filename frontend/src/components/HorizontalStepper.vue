@@ -52,7 +52,9 @@ const emit = defineEmits(['navigate']);
 function canNavigateToStep(stepId) {
   if (stepId === props.currentStep) return true;
   const targetStep = props.steps.find(s => s.id === stepId);
-  if (targetStep && targetStep.completed) return true;
+  if (!targetStep) return false;
+  if (targetStep.alwaysAccessible) return true;
+  if (targetStep.completed) return true;
   let firstUncompletedStepId = props.steps.find(s => !s.completed)?.id;
   return stepId === firstUncompletedStepId || (firstUncompletedStepId === undefined && targetStep); // Allow any if all completed
 }

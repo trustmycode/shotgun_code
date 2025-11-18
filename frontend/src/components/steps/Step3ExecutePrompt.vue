@@ -102,9 +102,6 @@
         <p>Select an item from history to view details</p>
     </div>
     
-    <!-- Hidden Split Limit Input (for compatibility/defaults) -->
-    <input type="hidden" :value="localSplitLineLimit" />
-
     <!-- API Call Debug Modal -->
     <div
       v-if="isApiCallModalVisible"
@@ -145,21 +142,13 @@
 </template>
 
 <script setup>
-import { ref, onMounted, defineEmits, defineProps } from 'vue';
+import { ref, onMounted } from 'vue';
 import { GetPromptHistory, ClearPromptHistory } from '../../../wailsjs/go/main/App';
 import { LogInfo, LogError } from '../../../wailsjs/runtime/runtime';
-
-const props = defineProps({
-  initialGitDiff: { type: String, default: '' },
-  initialSplitLineLimit: { type: Number, default: 0 }
-});
-
-const emit = defineEmits(['action', 'update:shotgunGitDiff', 'update:splitLineLimit']);
 
 const historyItems = ref([]);
 const selectedItem = ref(null);
 const isLoading = ref(false);
-const localSplitLineLimit = ref(500); // Default
 
 const copyReqBtnText = ref('Copy All');
 const copyResBtnText = ref('Copy All');
@@ -170,9 +159,6 @@ const copyApiCallBtnText = ref('Copy All');
 
 onMounted(() => {
     loadHistory();
-    if (props.initialSplitLineLimit > 0) {
-        localSplitLineLimit.value = props.initialSplitLineLimit;
-    }
 });
 
 // Refresh history when this component becomes visible (if parent keeps it alive) or via prop changes if needed.
@@ -258,19 +244,6 @@ async function copyApiCall() {
     } catch (err) {
         console.error('Copy failed:', err);
     }
-}
-
-function useAsDiff(content) {
-    if (!content) return;
-    
-    // Update parent state
-    emit('update:shotgunGitDiff', content);
-    
-    // Trigger split action
-    emit('action', 'executePromptAndSplitDiff', {
-        gitDiff: content,
-        lineLimit: localSplitLineLimit.value
-    });
 }
 
 // Expose methods for parent if needed (e.g. to refresh when Step 2 completes)
