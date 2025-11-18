@@ -78,12 +78,17 @@
       <div v-if="generatedContext && !generatedContext.startsWith('Error:')" class="flex-grow flex flex-col">
         <div class="flex items-center justify-between mb-1">
           <h3 class="text-sm font-semibold text-gray-700">Generated Project Context:</h3>
-          <button
-            @click="copyGeneratedContextToClipboard"
-            class="px-3 py-1 bg-gray-200 text-gray-700 text-xs font-semibold rounded-md hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-opacity-50"
-          >
-            {{ copyButtonText }}
-          </button>
+          <div class="flex items-center space-x-3 text-xs">
+            <span class="text-gray-500">
+              {{ generatedContextSizeLabel }}
+            </span>
+            <button
+              @click="copyGeneratedContextToClipboard"
+              class="px-3 py-1 bg-gray-200 text-gray-700 text-xs font-semibold rounded-md hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-opacity-50"
+            >
+              {{ copyButtonText }}
+            </button>
+          </div>
         </div>
         <LargeTextViewer
           class="flex-grow"
@@ -95,7 +100,12 @@
           min-height="200px"
           :max-display-length="10000"
           :show-copy-button="false"
+          :show-header="false"
+          :show-footer="false"
         />
+        <p class="text-xs text-gray-500 mt-1">
+          Preview is truncated for performance. Use Copy All to grab the full text.
+        </p>
       </div>
       <div v-else-if="generatedContext && generatedContext.startsWith('Error:')" class="text-red-500 p-3 border border-red-300 rounded bg-red-50 flex-grow flex flex-col justify-center items-center">
         <h4 class="font-semibold mb-1">Error Generating Context:</h4>
@@ -188,6 +198,17 @@ const repoScanTokensLabel = computed(() => {
   return `${repoScanTokenCount.value} tokens`;
 });
 
+const generatedContextCharCount = computed(() => {
+  if (!props.generatedContext) {
+    return 0;
+  }
+  return props.generatedContext.length;
+});
+
+const generatedContextSizeLabel = computed(() => {
+  return formatBytes(generatedContextCharCount.value);
+});
+
 const hasAutoContextPrerequisites = computed(() => {
   if (!props.hasActiveLlmKey) {
     return false;
@@ -257,6 +278,19 @@ function updateTokenCount(text) {
     return;
   }
   repoScanTokenCount.value = Math.ceil(text.length / 4);
+}
+
+function formatBytes(length) {
+  if (!length) {
+    return '0 B';
+  }
+  if (length >= 1024 * 1024) {
+    return `${(length / (1024 * 1024)).toFixed(1)} MB`;
+  }
+  if (length >= 1024) {
+    return `${(length / 1024).toFixed(1)} KB`;
+  }
+  return `${length} B`;
 }
 
 async function copyGeneratedContextToClipboard() {

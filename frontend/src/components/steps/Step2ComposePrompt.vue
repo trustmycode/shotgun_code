@@ -75,14 +75,15 @@
       </div>
 
       <!-- Right Column: Final Prompt -->
-      <div class="w-1/2 flex flex-col overflow-y-auto p-2 border border-gray-200 rounded-md bg-white">
-        <div class="flex items-center justify-between mb-2 space-x-3">
+      <div class="w-1/2 flex flex-col overflow-y-auto p-2 border border-gray-200 rounded-md bg-white relative">
+        <div class="flex flex-wrap items-center gap-3 mb-2 min-h-[28px]">
           <div class="flex items-center space-x-2">
             <h3 class="text-md font-medium text-gray-700">Prompt:</h3>
+            <!-- Small Loading Indicator next to title instead of destroying content -->
+            <div v-if="isLoadingFinalPrompt" class="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-500"></div>
             <select
               v-model="selectedPromptTemplateKey"
               class="ml-2 p-1 border border-gray-300 rounded-md text-xs focus:ring-blue-500 focus:border-blue-500"
-              :disabled="isLoadingFinalPrompt"
               title="Select prompt template"
             >
               <option v-for="(template, key) in promptTemplates" :key="key" :value="key">
@@ -90,41 +91,44 @@
               </option>
             </select>
           </div>
-          <div class="flex items-center space-x-3 text-xs">
-            <span
-              v-show="!isLoadingFinalPrompt"
-              :class="['font-medium', charCountColorClass]"
-              :title="tooltipText"
-            >
-              ~{{ approximateTokens }} tokens
-            </span>
-            <button
-              @click="copyFinalPromptToClipboard"
-              :disabled="!props.finalPrompt || isLoadingFinalPrompt"
-              class="px-3 py-1 bg-blue-500 text-white font-semibold rounded-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 disabled:bg-gray-300"
-            >
-              {{ copyButtonText }}
-            </button>
+          <span
+            v-show="!isLoadingFinalPrompt"
+            :class="['text-xs font-medium', charCountColorClass]"
+            :title="tooltipText"
+          >
+            ~{{ approximateTokens }} tokens
+          </span>
+          <button
+            @click="copyFinalPromptToClipboard"
+            :disabled="!props.finalPrompt || isLoadingFinalPrompt"
+            class="px-3 py-1 bg-blue-500 text-white text-xs font-semibold rounded-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 disabled:bg-gray-300"
+          >
+            {{ copyButtonText }}
+          </button>
+        </div>
+        <!-- 
+           MODIFIED: 
+           1. Removed v-if/v-else switching.
+           2. Added transition classes to LargeTextViewer container.
+           3. Added overlay class for loading state.
+        -->
+        <div class="flex flex-col flex-grow relative">
+          <div 
+            class="flex-grow transition-opacity duration-200 ease-in-out"
+            :class="{ 'opacity-50 grayscale': isLoadingFinalPrompt }"
+          >
+            <LargeTextViewer
+              class="flex-grow h-full"
+              :content="props.finalPrompt"
+              label="Generated prompt preview"
+              placeholder="The final prompt will be generated here..."
+              :platform="props.platform"
+              min-height="300px"
+              max-height="1000px"
+              :max-display-length="15000"
+              :show-copy-button="false"
+            />
           </div>
-        </div>
-
-        <div v-if="isLoadingFinalPrompt" class="flex-grow flex justify-center items-center">
-          <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
-          <p class="text-gray-500 ml-2">Updating prompt...</p>
-        </div>
-
-        <div v-else class="flex flex-col flex-grow">
-          <LargeTextViewer
-            class="flex-grow"
-            :content="props.finalPrompt"
-            label="Generated prompt preview"
-            placeholder="The final prompt will be generated here..."
-            :platform="props.platform"
-            min-height="300px"
-            max-height="1000px"
-            :max-display-length="15000"
-            :show-copy-button="false"
-          />
           <p class="text-xs text-gray-500 mt-1">
             Preview is truncated for performance. Use Copy All to grab the full text.
           </p>
@@ -210,7 +214,7 @@ const promptTemplates = {
   architect: { name: 'Architect', content: architectTemplateContentFromFile },
   findBug: { name: 'Test', content: findBugTemplateContentFromFile },
   dev: { name: 'Dev', content: devTemplateContentFromFile },
-  architect: { name: 'Architect', content: architectTemplateContentFromFile },
+  // architect duplicate removed
   projectManager: { name: 'Project: Update Tasks', content: projectManagerTemplateContentFromFile },
 };
 
@@ -265,10 +269,6 @@ const tooltipText = computed(() => {
   return `Your text contains ${count} symbols which is roughly equivalent to ${tokens} tokens`;
 });
 
-const finalPromptSizeLabel = computed(() => {
-  return formatBytes(charCount.value);
-});
-
 const hasExecutePrerequisites = computed(() => {
   if (!props.hasActiveLlmKey) {
     return false;
@@ -318,27 +318,35 @@ onMounted(async () => {
 
 async function updateFinalPrompt() {
   isLoadingFinalPrompt.value = true;
-  await new Promise(resolve => setTimeout(resolve, 100));
 
-  const currentTemplateContent = promptTemplates[selectedPromptTemplateKey.value].content;
-  let populatedPrompt = currentTemplateContent;
-  populatedPrompt = populatedPrompt.replace('{TASK}', props.userTask || "No task provided by the user.");
-  populatedPrompt = populatedPrompt.replace('{RULES}', props.rulesContent);
-  populatedPrompt = populatedPrompt.replace('{FILE_STRUCTURE}', props.fileListContext || "No file structure context provided.");
+  // MODIFIED: Removed the artificial delay (await new Promise...) 
+  // to make the update instant and smoother. 
+  // The debounce on input is enough to prevent performance issues.
+  try {
+    const currentTemplateContent = promptTemplates[selectedPromptTemplateKey.value].content;
+    let populatedPrompt = currentTemplateContent;
+    populatedPrompt = populatedPrompt.replace('{TASK}', props.userTask || "No task provided by the user.");
+    populatedPrompt = populatedPrompt.replace('{RULES}', props.rulesContent);
+    populatedPrompt = populatedPrompt.replace('{FILE_STRUCTURE}', props.fileListContext || "No file structure context provided.");
 
-  // Insert current date in YYYY-MM-DD format
-  const now = new Date();
-  const yyyy = now.getFullYear();
-  const mm = String(now.getMonth() + 1).padStart(2, '0');
-  const dd = String(now.getDate()).padStart(2, '0');
-  const currentDate = `${yyyy}-${mm}-${dd}`;
-  populatedPrompt = populatedPrompt.replaceAll('{CURRENT_DATE}', currentDate);
+    // Insert current date in YYYY-MM-DD format
+    const now = new Date();
+    const yyyy = now.getFullYear();
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const dd = String(now.getDate()).padStart(2, '0');
+    const currentDate = `${yyyy}-${mm}-${dd}`;
+    populatedPrompt = populatedPrompt.replaceAll('{CURRENT_DATE}', currentDate);
 
-  emit('update:finalPrompt', populatedPrompt);
-  isLoadingFinalPrompt.value = false;
+    emit('update:finalPrompt', populatedPrompt);
+  } finally {
+    isLoadingFinalPrompt.value = false;
+  }
 }
 
 function debouncedUpdateFinalPrompt() {
+  // Set loading to true immediately to show "working" state via opacity opacity/spinner
+  isLoadingFinalPrompt.value = true;
+
   clearTimeout(finalPromptDebounceTimer);
   finalPromptDebounceTimer = setTimeout(() => {
     updateFinalPrompt();
@@ -484,20 +492,6 @@ async function copyResponse() {
         }, 2000);
     }
 }
-
-function formatBytes(length) {
-  if (!length) {
-    return '0 B';
-  }
-  if (length >= 1024 * 1024) {
-    return `${(length / (1024 * 1024)).toFixed(1)} MB`;
-  }
-  if (length >= 1024) {
-    return `${(length / 1024).toFixed(1)} KB`;
-  }
-  return `${length} B`;
-}
-
 
 defineExpose({});
 </script>

@@ -1,6 +1,6 @@
 <template>
   <div class="flex flex-col w-full">
-    <div v-if="label || totalSizeLabel" class="flex items-center justify-between mb-1">
+    <div v-if="showHeader && (label || totalSizeLabel)" class="flex items-center justify-between mb-1">
       <label v-if="label" class="block text-sm font-medium text-gray-700">{{ label }}</label>
       <span class="text-xs text-gray-500" v-if="totalSizeLabel">{{ totalSizeLabel }}</span>
     </div>
@@ -17,7 +17,7 @@
       </template>
     </div>
 
-    <div v-if="hasContent" class="flex items-center justify-between mt-2">
+    <div v-if="showFooter && hasContent" class="flex items-center justify-between mt-2">
       <p class="text-xs" :class="isTruncated ? 'text-amber-600' : 'text-gray-500'">
         <template v-if="isTruncated">
           Showing preview of {{ previewSizeLabel }} ({{ displayedCharactersLabel }}) out of {{ totalSizeLabel }} ({{ totalCharactersLabel }})
@@ -78,6 +78,14 @@ const props = defineProps({
   copyButtonLabel: {
     type: String,
     default: 'Copy Full Content'
+  },
+  showHeader: {
+    type: Boolean,
+    default: true
+  },
+  showFooter: {
+    type: Boolean,
+    default: true
   }
 });
 
