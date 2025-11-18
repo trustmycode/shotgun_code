@@ -289,7 +289,24 @@ function toggleExcludeNode(nodeToToggle) {
     nodeToToggle.excluded = !nodeToToggle.excluded;
   }
   manuallyToggledNodes.set(nodeToToggle.relPath, nodeToToggle.excluded);
+
+  // FIX: When toggling a folder, clear manual overrides for all descendants
+  // so they inherit the new state of the parent. This fixes the issue where
+  // Auto Context pins all files, preventing parent folders from affecting children.
+  if (nodeToToggle.isDir) {
+    clearDescendantManualToggles(nodeToToggle);
+  }
+
   addLog(`Toggled exclusion for ${nodeToToggle.name} to ${nodeToToggle.excluded}`, 'info', 'bottom');
+}
+
+function clearDescendantManualToggles(node) {
+  if (node.children && node.children.length > 0) {
+    node.children.forEach(child => {
+      manuallyToggledNodes.delete(child.relPath);
+      clearDescendantManualToggles(child);
+    });
+  }
 }
 
 function updateAllNodesExcludedState(nodesToUpdate) { // This is the public-facing function

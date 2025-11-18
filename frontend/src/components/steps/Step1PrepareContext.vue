@@ -1,22 +1,13 @@
 <template>
   <div class="p-4 h-full flex flex-col">
-    <!-- Loading State: Always Progress Bar -->
-    <div v-if="isLoadingContext" class="flex-grow flex justify-center items-center">
-      <div class="text-center">
-        <div class="w-64 mx-auto">
-          <p class="text-gray-600 mb-1 text-sm">Generating project context...</p>
-          <div class="w-full bg-gray-200 rounded-full h-2.5 dark:bg-gray-700">
-            <div class="bg-blue-600 h-2.5 rounded-full" :style="{ width: progressBarWidth }"></div>
-          </div>
-          <p class="text-gray-500 mt-1 text-xs">
-            {{ generationProgress.current }} / {{ generationProgress.total > 0 ? generationProgress.total : 'calculating...' }} items
-          </p>
-        </div>
-      </div>
-    </div>
+    <!-- State 1: No Project Selected -->
+    <p v-if="!projectRoot" class="text-xs text-gray-500 mt-2 flex-grow flex justify-center items-center">
+      Select a project folder to begin.
+    </p>
 
-    <!-- Content Area (Textarea + Copy Button OR Error Message OR Placeholder) -->
-    <div v-else-if="projectRoot" class="mt-0 flex-grow flex flex-col space-y-4">
+    <!-- State 2: Project Selected (Always visible container) -->
+    <div v-else class="mt-0 flex-grow flex flex-col space-y-4">
+      <!-- TOP BLOCK: User Task Input (Never disappears now) -->
       <div>
         <div class="flex items-center justify-between mb-1">
           <label for="user-task-ai-step1" class="block text-sm font-medium text-gray-700">Your task for AI:</label>
@@ -75,10 +66,16 @@
         ></textarea>
       </div>
 
-      <div v-if="generatedContext && !generatedContext.startsWith('Error:')" class="flex-grow flex flex-col">
+      <!-- BOTTOM BLOCK: Generated Context (Switches between Loading/Content) -->
+      <div class="flex-grow flex flex-col min-h-0">
         <div class="flex items-center justify-between mb-1">
           <h3 class="text-sm font-semibold text-gray-700">Generated Project Context:</h3>
-          <div class="flex items-center space-x-3 text-xs">
+
+          <!-- Hide controls while loading to prevent interaction -->
+          <div
+            v-if="!isLoadingContext && generatedContext && !generatedContext.startsWith('Error:')"
+            class="flex items-center space-x-3 text-xs"
+          >
             <span class="text-gray-500">
               {{ generatedContextSizeLabel }}
             </span>
@@ -90,36 +87,79 @@
             </button>
           </div>
         </div>
-        <LargeTextViewer
-          class="flex-grow"
-          :content="generatedContext"
-          label=""
-          :platform="props.platform"
-          placeholder="Context will appear here. If empty, ensure files are selected and not all excluded."
-          copy-button-label="Copy All"
-          min-height="200px"
-          :max-display-length="10000"
-          :show-copy-button="false"
-          :show-header="false"
-          :show-footer="false"
-        />
-        <p class="text-xs text-gray-500 mt-1">
-          Preview is truncated for performance. Use Copy All to grab the full text.
-        </p>
-      </div>
-      <div v-else-if="generatedContext && generatedContext.startsWith('Error:')" class="text-red-500 p-3 border border-red-300 rounded bg-red-50 flex-grow flex flex-col justify-center items-center">
-        <h4 class="font-semibold mb-1">Error Generating Context:</h4>
-        <pre class="text-xs whitespace-pre-wrap text-left w-full bg-white p-2 border border-red-200 rounded max-h-60 overflow-auto">{{ generatedContext.substring(6).trim() }}</pre>
-      </div>
-      <p v-else class="text-xs text-gray-500 mt-2 flex-grow flex justify-center items-center">
-        Project context will be generated automatically. If empty after generation, ensure files are selected and not all excluded.
-      </p>
-    </div>
 
-    <!-- Initial message when no project is selected -->
-    <p v-else class="text-xs text-gray-500 mt-2 flex-grow flex justify-center items-center">
-      Select a project folder to begin.
-    </p>
+        <!-- Container for Viewer / Loader / Error -->
+        <div class="relative flex-grow flex flex-col border border-gray-300 rounded-md bg-white overflow-hidden">
+          <!-- 1. Loading State Overlay -->
+          <div
+            v-if="isLoadingContext"
+            class="absolute inset-0 z-10 flex justify-center items-center bg-white bg-opacity-90"
+          >
+            <div class="text-center">
+              <div class="w-64 mx-auto">
+                <p class="text-gray-600 mb-1 text-sm">Generating project context...</p>
+                <div class="w-full bg-gray-200 rounded-full h-2.5 dark:bg-gray-700">
+                  <div
+                    class="bg-blue-600 h-2.5 rounded-full transition-all duration-300 ease-out"
+                    :style="{ width: progressBarWidth }"
+                  ></div>
+                </div>
+                <p class="text-gray-500 mt-1 text-xs">
+                  {{ generationProgress.current }} /
+                  {{ generationProgress.total > 0 ? generationProgress.total : 'calculating...' }} items
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <!-- 2. Error State -->
+          <div
+            v-else-if="generatedContext && generatedContext.startsWith('Error:')"
+            class="text-red-500 p-3 bg-red-50 flex-grow flex flex-col justify-center items-center h-full"
+          >
+            <h4 class="font-semibold mb-1">Error Generating Context:</h4>
+            <pre
+              class="text-xs whitespace-pre-wrap text-left w-full bg-white p-2 border border-red-200 rounded max-h-60 overflow-auto"
+            >{{ generatedContext.substring(6).trim() }}</pre>
+          </div>
+
+          <!-- 3. Content State -->
+          <LargeTextViewer
+            v-else-if="generatedContext"
+            class="flex-grow h-full"
+            :content="generatedContext"
+            label=""
+            :platform="props.platform"
+            placeholder="Context will appear here."
+            copy-button-label="Copy All"
+            min-height="100%"
+            :max-display-length="10000"
+            :show-copy-button="false"
+            :show-header="false"
+            :show-footer="false"
+          />
+
+          <!-- 4. Empty/Initial State -->
+          <div v-else class="flex-grow flex justify-center items-center bg-gray-50 h-full">
+            <p class="text-xs text-gray-500 px-4 text-center">
+              Project context will be generated automatically.
+              <br />
+              If empty after generation, ensure files are selected and not all excluded.
+            </p>
+          </div>
+
+          <!-- Footer Note (Only visible when content exists and not loading) -->
+          <div
+            v-if="!isLoadingContext && generatedContext && !generatedContext.startsWith('Error:')"
+            class="bg-gray-50 p-1 border-t border-gray-200"
+          >
+            <p class="text-xs text-gray-500 text-center">
+              Preview is truncated for performance. Use Copy All to grab the full text.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <RepoScanModal
       :isVisible="isRepoScanModalVisible"
@@ -129,7 +169,6 @@
     />
   </div>
 </template>
-
 
 <script setup>
 import { defineProps, ref, computed, defineEmits, watch } from 'vue';
@@ -147,15 +186,15 @@ const props = defineProps({
     type: String,
     default: ''
   },
-  isLoadingContext: { // New prop
+  isLoadingContext: {
     type: Boolean,
     default: false
   },
-  generationProgress: { // New prop for progress data
+  generationProgress: {
     type: Object,
     default: () => ({ current: 0, total: 0 })
   },
-  platform: { // To know if we are on macOS
+  platform: {
     type: String,
     default: 'unknown'
   },
@@ -182,6 +221,7 @@ const progressBarWidth = computed(() => {
   }
   return '0%';
 });
+
 const copyButtonText = ref('Copy All');
 const localUserTask = ref(props.userTask);
 let userTaskInputDebounceTimer = null;
@@ -229,14 +269,19 @@ const autoContextButtonClass = computed(() => {
   return 'auto-context-button--enabled';
 });
 
-watch(() => props.userTask, (newValue) => {
-  if (newValue !== localUserTask.value) {
-    localUserTask.value = newValue;
+watch(
+  () => props.userTask,
+  (newValue) => {
+    if (newValue !== localUserTask.value) {
+      localUserTask.value = newValue;
+    }
   }
-});
+);
 
 watch(localUserTask, (currentValue) => {
-  clearTimeout(userTaskInputDebounceTimer);
+  if (userTaskInputDebounceTimer) {
+    clearTimeout(userTaskInputDebounceTimer);
+  }
   userTaskInputDebounceTimer = setTimeout(() => {
     if (currentValue !== props.userTask) {
       emit('update:userTask', currentValue);
@@ -245,31 +290,37 @@ watch(localUserTask, (currentValue) => {
 });
 
 // Watch for project root changes to load repo scan
-watch(() => props.projectRoot, async (newRoot) => {
-  if (newRoot) {
+watch(
+  () => props.projectRoot,
+  async (newRoot) => {
+    if (!newRoot) {
+      repoScanContent.value = '';
+      includeRepoScan.value = false;
+      repoScanTokenCount.value = 0;
+      return;
+    }
+
     try {
       const content = await LoadRepoScan(newRoot);
       if (content) {
         repoScanContent.value = content;
         includeRepoScan.value = true;
         updateTokenCount(content);
-      } else {
-        repoScanContent.value = '';
-        includeRepoScan.value = false;
-        repoScanTokenCount.value = 0;
+        return;
       }
+
+      repoScanContent.value = '';
+      includeRepoScan.value = false;
+      repoScanTokenCount.value = 0;
     } catch (err) {
-      console.error("Failed to load repo scan:", err);
+      console.error('Failed to load repo scan:', err);
       repoScanContent.value = '';
       includeRepoScan.value = false;
       repoScanTokenCount.value = 0;
     }
-  } else {
-    repoScanContent.value = '';
-    includeRepoScan.value = false;
-    repoScanTokenCount.value = 0;
-  }
-}, { immediate: true });
+  },
+  { immediate: true }
+);
 
 function updateTokenCount(text) {
   // Simple estimation: length / 4
@@ -294,7 +345,10 @@ function formatBytes(length) {
 }
 
 async function copyGeneratedContextToClipboard() {
-  if (!props.generatedContext) return;
+  if (!props.generatedContext) {
+    return;
+  }
+
   try {
     if (props.platform === 'darwin') {
       await WailsClipboardSetText(props.generatedContext);
@@ -347,26 +401,26 @@ async function handleSaveRepoScan(content) {
   repoScanContent.value = content;
   updateTokenCount(content);
   isRepoScanModalVisible.value = false;
-  
+
   if (content && props.projectRoot) {
     try {
       await SaveRepoScan(props.projectRoot, content);
       includeRepoScan.value = true;
     } catch (err) {
-      console.error("Failed to save repo scan:", err);
-      // Optionally show error to user
+      console.error('Failed to save repo scan:', err);
     }
-  } else if (!content && props.projectRoot) {
-     // If content is empty, maybe we should delete the file? 
-     // For now, just saving empty string is fine or we can leave it. 
-     // The requirement says "if there is a repo scan... it is picked up automatically".
-     // If user clears it, we probably should save empty string.
-     try {
-      await SaveRepoScan(props.projectRoot, "");
+    return;
+  }
+
+  if (!content && props.projectRoot) {
+    try {
+      await SaveRepoScan(props.projectRoot, '');
       includeRepoScan.value = false;
     } catch (err) {
-      console.error("Failed to clear repo scan:", err);
+      console.error('Failed to clear repo scan:', err);
     }
   }
 }
 </script>
+
+
