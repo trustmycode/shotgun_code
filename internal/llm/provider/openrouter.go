@@ -60,9 +60,9 @@ func (o *openRouterProvider) ListModels(_ context.Context) ([]ModelInfo, error) 
 	return ModelCatalog("openrouter")
 }
 
-func (o *openRouterProvider) Generate(ctx context.Context, prompt string) (string, error) {
+func (o *openRouterProvider) Generate(ctx context.Context, prompt string) (string, string, error) {
 	if o.client == nil {
-		return "", errors.New("openrouter client is not configured")
+		return "", "", errors.New("openrouter client is not configured")
 	}
 
 	// Для моделей семейства GPT‑5 используем ручной вызов OpenRouter Chat Completions API
@@ -72,10 +72,17 @@ func (o *openRouterProvider) Generate(ctx context.Context, prompt string) (strin
 	}
 
 	// Для остальных моделей сохраняем текущее поведение через langchaingo.
-	return llms.GenerateFromSinglePrompt(ctx, o.client, prompt,
+	output, err := llms.GenerateFromSinglePrompt(ctx, o.client, prompt,
 		llms.WithModel(o.model),
 		llms.WithTemperature(0.1),
 	)
+
+	debug := o.buildGenericAPICallDebug()
+
+	if err != nil {
+		return "", debug, err
+	}
+	return output, debug, nil
 }
 
 type openRouterChatMessage struct {
@@ -106,10 +113,10 @@ type openRouterChatRequest struct {
 	Text      openRouterTextConfig      `json:"text"`
 }
 
-func (o *openRouterProvider) generateViaOpenRouterAPI(ctx context.Context, prompt string) (string, error) {
+func (o *openRouterProvider) generateViaOpenRouterAPI(ctx context.Context, prompt string) (string, string, error) {
 	apiKey := strings.TrimSpace(o.apiKey)
 	if apiKey == "" {
-		return "", errors.New("openrouter API key is required for GPT-5 models")
+		return "", "", errors.New("openrouter API key is required for GPT-5 models")
 	}
 
 	baseURL := strings.TrimSpace(o.baseURL)
@@ -134,14 +141,47 @@ func (o *openRouterProvider) generateViaOpenRouterAPI(ctx context.Context, promp
 		},
 	}
 
+	// Build sanitized debug view BEFORE marshalling real payload.
+	debugPayload := openRouterChatRequest{
+		Model: o.model,
+		Messages: []openRouterChatMessage{
+			{
+				Role:    "user",
+				Content: "[request_text]",
+			},
+		},
+		Reasoning: openRouterReasoningConfig{
+			Effort: "medium",
+		},
+		Text: openRouterTextConfig{
+			Verbosity: "high",
+		},
+	}
+
+	debug := map[string]any{
+		"provider": "openrouter",
+		"endpoint": endpoint,
+		"method":   http.MethodPost,
+		"headers": map[string]string{
+			"Authorization": "Bearer [apikey]",
+			"Content-Type":  "application/json",
+		},
+		"body": debugPayload,
+	}
+	debugBytes, err := json.MarshalIndent(debug, "", "  ")
+	if err != nil {
+		debugBytes = nil
+	}
+	debugString := string(debugBytes)
+
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return "", fmt.Errorf("failed to marshal OpenRouter chat payload: %w", err)
+		return "", debugString, fmt.Errorf("failed to marshal OpenRouter chat payload: %w", err)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
-		return "", fmt.Errorf("failed to create OpenRouter chat request: %w", err)
+		return "", debugString, fmt.Errorf("failed to create OpenRouter chat request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 	req.Header.Set("Content-Type", "application/json")
@@ -149,32 +189,53 @@ func (o *openRouterProvider) generateViaOpenRouterAPI(ctx context.Context, promp
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		log.Printf("openrouter chat request failed (model=%s): %v", o.model, err)
-		return "", fmt.Errorf("openrouter chat request failed: %w", err)
+		return "", debugString, fmt.Errorf("openrouter chat request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		limitedBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		log.Printf("openrouter chat returned status %d for model %s: %s", resp.StatusCode, o.model, string(limitedBody))
-		return "", fmt.Errorf("openrouter chat API returned non-2xx status %d", resp.StatusCode)
+		return "", debugString, fmt.Errorf("openrouter chat API returned non-2xx status %d", resp.StatusCode)
 	}
 
 	var decoded openRouterChatResponse
 	if err := json.NewDecoder(resp.Body).Decode(&decoded); err != nil {
 		log.Printf("failed to decode openrouter chat payload for model %s: %v", o.model, err)
-		return "", fmt.Errorf("failed to decode openrouter chat payload: %w", err)
+		return "", debugString, fmt.Errorf("failed to decode openrouter chat payload: %w", err)
 	}
 
 	if len(decoded.Choices) == 0 {
 		log.Printf("openrouter chat response did not contain any choices for model %s", o.model)
-		return "", errors.New("openrouter chat response did not contain any choices")
+		return "", debugString, errors.New("openrouter chat response did not contain any choices")
 	}
 
 	text := strings.TrimSpace(decoded.Choices[0].Message.Content)
 	if text == "" {
 		log.Printf("openrouter chat response contained empty message content for model %s", o.model)
-		return "", errors.New("openrouter chat response did not contain text output")
+		return "", debugString, errors.New("openrouter chat response did not contain text output")
 	}
 
-	return text, nil
+	return text, debugString, nil
+}
+
+// buildGenericAPICallDebug builds a high-level debug representation for SDK-based calls (non‑GPT‑5).
+func (o *openRouterProvider) buildGenericAPICallDebug() string {
+	debug := map[string]any{
+		"provider": "openrouter",
+		"model":    o.model,
+		"baseURL":  o.baseURL,
+		"sdk":      "langchaingo/llms.openai",
+		"call":     "llms.GenerateFromSinglePrompt",
+		"input":    "[request_text]",
+		"headers": map[string]string{
+			"Authorization": "Bearer [apikey]",
+		},
+	}
+
+	data, err := json.MarshalIndent(debug, "", "  ")
+	if err != nil {
+		return ""
+	}
+	return string(data)
 }

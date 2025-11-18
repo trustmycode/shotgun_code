@@ -18,6 +18,7 @@ type PromptHistoryItem struct {
 	UserTask          string    `json:"userTask"`
 	ConstructedPrompt string    `json:"constructedPrompt"`
 	Response          string    `json:"response"`
+	APICall           string    `json:"apiCall,omitempty"`
 }
 
 type PromptHistory struct {
@@ -95,7 +96,7 @@ func (hm *HistoryManager) SaveHistory() error {
 	return os.WriteFile(path, data, 0644)
 }
 
-func (hm *HistoryManager) AddItem(userTask, constructedPrompt, response string) PromptHistoryItem {
+func (hm *HistoryManager) AddItem(userTask, constructedPrompt, response, apiCall string) PromptHistoryItem {
 	hm.mu.Lock()
 	// Generate simple ID based on timestamp
 	now := time.Now()
@@ -105,6 +106,7 @@ func (hm *HistoryManager) AddItem(userTask, constructedPrompt, response string) 
 		UserTask:          userTask,
 		ConstructedPrompt: constructedPrompt,
 		Response:          response,
+		APICall:           apiCall,
 	}
 	// Prepend to keep newest first
 	hm.history.Items = append([]PromptHistoryItem{item}, hm.history.Items...)
@@ -152,15 +154,22 @@ func (a *App) ExecuteLLMPrompt(userTask, finalPrompt string) (PromptHistoryItem,
 	wailsRuntime.LogInfof(a.ctx, "Executing LLM prompt via %s (%s)...", cfg.Provider, cfg.Model)
 
 	// Use provider.Generate. Note: we don't have streaming here yet, so it waits for full response.
-	response, err := providerInstance.Generate(a.ctx, finalPrompt)
+	response, apiCall, err := providerInstance.Generate(a.ctx, finalPrompt)
+
+	var historyItem PromptHistoryItem
+	if a.historyManager != nil {
+		historyResponse := response
+		if err != nil {
+			historyResponse = fmt.Sprintf("ERROR during prompt execution: %v", err)
+		}
+		historyItem = a.historyManager.AddItem(userTask, finalPrompt, historyResponse, apiCall)
+	}
+
 	if err != nil {
 		return PromptHistoryItem{}, fmt.Errorf("LLM generation failed: %w", err)
 	}
 
-	// Save to history
-	item := a.historyManager.AddItem(userTask, finalPrompt, response)
-	
-	return item, nil
+	return historyItem, nil
 }
 
 func (a *App) GetPromptHistory() []PromptHistoryItem {

@@ -71,6 +71,7 @@ export namespace main {
 	    userTask: string;
 	    constructedPrompt: string;
 	    response: string;
+	    apiCall?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new PromptHistoryItem(source);
@@ -83,6 +84,7 @@ export namespace main {
 	        this.userTask = source["userTask"];
 	        this.constructedPrompt = source["constructedPrompt"];
 	        this.response = source["response"];
+	        this.apiCall = source["apiCall"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

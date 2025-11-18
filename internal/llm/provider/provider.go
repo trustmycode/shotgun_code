@@ -24,8 +24,11 @@ type ModelInfo struct {
 type LLMProvider interface {
 	// ListModels returns the list of models available for the configured provider/key combination.
 	ListModels(ctx context.Context) ([]ModelInfo, error)
-	// Generate executes the provided prompt with the configured model and returns the raw LLM text output.
-	Generate(ctx context.Context, prompt string) (string, error)
+	// Generate executes the provided prompt with the configured model and returns:
+	// - the raw LLM text output,
+	// - a sanitized debug representation of the API call (no API keys, no raw prompt; placeholders instead),
+	// - and an error if the call failed.
+	Generate(ctx context.Context, prompt string) (string, string, error)
 }
 
 // Factory builds provider implementations based on the given configuration.

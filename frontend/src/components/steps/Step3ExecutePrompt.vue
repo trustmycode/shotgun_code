@@ -53,9 +53,18 @@
              <div class="w-1/2 flex flex-col border-r border-gray-200">
                  <div class="p-2 border-b border-gray-200 flex justify-between items-center bg-gray-50">
                      <span class="font-bold text-gray-700 text-xs uppercase tracking-wider">Raw Request</span>
-                     <button @click="copyText(selectedItem.constructedPrompt, 'req')" class="text-xs text-blue-600 hover:text-blue-800 font-medium">
-                        {{ copyReqBtnText }}
-                     </button>
+                     <div class="flex items-center space-x-2">
+                       <button @click="copyText(selectedItem.constructedPrompt, 'req')" class="text-xs text-blue-600 hover:text-blue-800 font-medium">
+                          {{ copyReqBtnText }}
+                       </button>
+                       <button
+                         v-if="selectedItem && selectedItem.apiCall"
+                         @click="openApiCallModal"
+                         class="text-xs text-gray-500 hover:text-gray-800 underline"
+                       >
+                         view api call
+                       </button>
+                     </div>
                  </div>
                  <div class="relative flex-grow">
                     <textarea 
@@ -95,11 +104,48 @@
     
     <!-- Hidden Split Limit Input (for compatibility/defaults) -->
     <input type="hidden" :value="localSplitLineLimit" />
+
+    <!-- API Call Debug Modal -->
+    <div
+      v-if="isApiCallModalVisible"
+      class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+    >
+      <div class="bg-white rounded-lg shadow-xl w-[90%] h-[90%] flex flex-col">
+        <div class="flex items-center justify-between px-4 py-2 border-b border-gray-200">
+          <h3 class="text-sm font-semibold text-gray-800">LLM API Call</h3>
+          <button
+            @click="closeApiCallModal"
+            class="text-gray-500 hover:text-gray-800 text-xl leading-none"
+          >
+            &times;
+          </button>
+        </div>
+        <textarea
+          readonly
+          class="flex-1 p-4 font-mono text-xs border-none outline-none resize-none bg-gray-50"
+          :value="currentApiCall"
+        ></textarea>
+        <div class="flex justify-end space-x-3 px-4 py-3 border-t border-gray-200 bg-gray-50">
+          <button
+            @click="copyApiCall"
+            class="text-xs text-blue-600 hover:text-blue-800 font-medium"
+          >
+            {{ copyApiCallBtnText }}
+          </button>
+          <button
+            @click="closeApiCallModal"
+            class="text-xs text-gray-600 hover:text-gray-900"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, defineEmits, defineProps, watch } from 'vue';
+import { ref, onMounted, defineEmits, defineProps } from 'vue';
 import { GetPromptHistory, ClearPromptHistory } from '../../../wailsjs/go/main/App';
 import { LogInfo, LogError } from '../../../wailsjs/runtime/runtime';
 
@@ -117,6 +163,10 @@ const localSplitLineLimit = ref(500); // Default
 
 const copyReqBtnText = ref('Copy All');
 const copyResBtnText = ref('Copy All');
+
+const isApiCallModalVisible = ref(false);
+const currentApiCall = ref('');
+const copyApiCallBtnText = ref('Copy All');
 
 onMounted(() => {
     loadHistory();
@@ -182,6 +232,29 @@ async function copyText(text, type) {
             copyResBtnText.value = 'Copied!';
             setTimeout(() => copyResBtnText.value = 'Copy All', 2000);
         }
+    } catch (err) {
+        console.error('Copy failed:', err);
+    }
+}
+
+function openApiCallModal() {
+    if (!selectedItem.value || !selectedItem.value.apiCall) {
+        return;
+    }
+    currentApiCall.value = selectedItem.value.apiCall;
+    isApiCallModalVisible.value = true;
+}
+
+function closeApiCallModal() {
+    isApiCallModalVisible.value = false;
+}
+
+async function copyApiCall() {
+    if (!currentApiCall.value) return;
+    try {
+        await navigator.clipboard.writeText(currentApiCall.value);
+        copyApiCallBtnText.value = 'Copied!';
+        setTimeout(() => copyApiCallBtnText.value = 'Copy All', 2000);
     } catch (err) {
         console.error('Copy failed:', err);
     }

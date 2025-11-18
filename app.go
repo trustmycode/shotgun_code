@@ -391,7 +391,7 @@ func (a *App) RequestAutoContextSelection(rootDir string, excludedPaths []string
 	}
 
 	// Execute LLM call
-	raw, err := providerInstance.Generate(a.ctx, prompt)
+	raw, apiCall, err := providerInstance.Generate(a.ctx, prompt)
 
 	// Log to shared prompt history for diagnostics (Step 3 view).
 	if a.historyManager != nil {
@@ -410,7 +410,7 @@ func (a *App) RequestAutoContextSelection(rootDir string, excludedPaths []string
 		if err != nil {
 			responseForHistory = fmt.Sprintf("ERROR during auto-context LLM call: %v", err)
 		}
-		a.historyManager.AddItem(historyLabel, prompt, responseForHistory)
+		a.historyManager.AddItem(historyLabel, prompt, responseForHistory, apiCall)
 	}
 
 	if err != nil {
