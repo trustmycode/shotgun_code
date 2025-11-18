@@ -3,7 +3,8 @@
 @tailwind utilities;
 
 /* Basic Reset */
-body, html {
+body,
+html {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
@@ -19,6 +20,69 @@ body, html {
   overflow: hidden; /* Prevent scrollbars on body if content fits */
 }
 
+:root {
+  --auto-context-button-bg: none;
+}
+
+.auto-context-button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.375rem 0.75rem; /* ~px-3 py-1 */
+  border-radius: 999px;
+  border-width: 1px;
+  border-style: solid;
+  font-size: 0.75rem; /* text-xs */
+  font-weight: 500;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
+  cursor: pointer;
+  overflow: hidden;
+  transition:
+    background-color 120ms ease-out,
+    opacity 120ms ease-out;
+}
+
+.auto-context-button--enabled {
+  color: #ffffff;
+  border-width: 0;
+  background-image: var(--auto-context-button-bg);
+  background-size: 110% 110%;
+  background-repeat: no-repeat;
+  background-position: center;
+}
+
+.auto-context-button--enabled::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    rgba(0, 0, 0, 0.18),
+    rgba(0, 0, 0, 0.05),
+    rgba(0, 0, 0, 0.18)
+  );
+  pointer-events: none;
+}
+
+.auto-context-button--enabled span {
+  position: relative;
+  z-index: 1;
+  white-space: nowrap;
+}
+
+.auto-context-button--disabled,
+.auto-context-button:disabled {
+  color: #9ca3af; /* gray-400 */
+  border-color: #d1d5db; /* gray-300 */
+  background-color: #f3f4f6; /* gray-100 */
+  box-shadow: none;
+  cursor: not-allowed;
+  opacity: 0.85;
+}
+
 /* Remove button and input styles, Tailwind will handle them */
 /* Default browser styles for buttons, inputs, textareas will be reset by Tailwind's preflight */
 /* Customizations should be done with Tailwind classes or specific component styles */
+
+

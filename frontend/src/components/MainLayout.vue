@@ -78,6 +78,7 @@ import {
   SplitShotgunDiff,
   GetLlmSettings,
   HasActiveLlmKey,
+  GetAutoContextButtonTexture,
 } from '../../wailsjs/go/main/App';
 import { EventsOn, Environment } from '../../wailsjs/runtime/runtime';
 
@@ -133,6 +134,7 @@ const shotgunGitDiff = ref('');
 const splitLineLimitValue = ref(0); // Add new state variable
 const hasActiveLlmKey = ref(false);
 const isAutoContextLoading = ref(false);
+const autoContextButtonTexture = ref('');
 const isLlmSettingsModalVisible = ref(false);
 const llmSettings = ref({});
 let debounceTimer = null;
@@ -537,6 +539,21 @@ onMounted(() => {
     }
   })();
   refreshLlmSettingsState();
+
+  (async () => {
+    try {
+      const texture = await GetAutoContextButtonTexture();
+      if (texture && typeof texture === 'string' && texture.length > 0) {
+        autoContextButtonTexture.value = texture;
+        document.documentElement.style.setProperty(
+          '--auto-context-button-bg',
+          `url(${texture})`
+        );
+      }
+    } catch (err) {
+      addLog(`Failed to load auto-context button texture: ${err?.message || err}`, 'error', 'bottom');
+    }
+  })();
 
   unlistenProjectFilesChanged = EventsOn("projectFilesChanged", (changedRootDir) => {
     if (changedRootDir !== projectRoot.value) {

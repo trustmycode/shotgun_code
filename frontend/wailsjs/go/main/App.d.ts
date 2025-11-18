@@ -4,6 +4,8 @@ import {main} from '../models';
 import {provider} from '../models';
 import {context} from '../models';
 
+export function GetAutoContextButtonTexture():Promise<string>;
+
 export function GetCustomIgnoreRules():Promise<string>;
 
 export function GetCustomPromptRules():Promise<string>;

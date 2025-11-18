@@ -18,6 +18,8 @@ import (
 	"github.com/fsnotify/fsnotify"
 	gitignore "github.com/sabhiram/go-gitignore"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
+
+	"shotgun_code/internal/labgradient"
 )
 
 const maxOutputSizeBytes = 10_000_000 // 10MB
@@ -61,6 +63,7 @@ type App struct {
 	projectGitignore            *gitignore.GitIgnore // Compiled .gitignore for the current project
 	autoContextService          *AutoContextService
 	llmCache                    cachedProvider
+	autoContextButtonTexture    string
 }
 
 func NewApp() *App {
@@ -88,6 +91,32 @@ func (a *App) startup(ctx context.Context) {
 	if strings.TrimSpace(a.settings.CustomPromptRules) == "" {
 		a.settings.CustomPromptRules = defaultCustomPromptRulesContent
 	}
+
+	a.initAutoContextButtonTexture()
+}
+
+func (a *App) initAutoContextButtonTexture() {
+	params := labgradient.SliceParams{
+		L:                80.0,
+		Radius:           60.0,
+		CenterAngleDeg:   320.0,
+		HorizontalSpanDeg: 60.0,
+		VerticalSpanDeg:   30.0,
+	}
+
+	texture, err := labgradient.GenerateLabSliceTexture(512, 64, params)
+	if err != nil {
+		runtime.LogErrorf(a.ctx, "failed to generate auto-context LAB texture: %v", err)
+		return
+	}
+
+	a.autoContextButtonTexture = texture
+	runtime.LogDebug(a.ctx, "auto-context LAB texture generated successfully")
+}
+
+// GetAutoContextButtonTexture returns a data URL with the LAB gradient texture for the Auto context button.
+func (a *App) GetAutoContextButtonTexture() string {
+	return a.autoContextButtonTexture
 }
 
 type FileNode struct {

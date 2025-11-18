@@ -33,13 +33,15 @@
           <h3 class="text-md font-medium text-gray-700">Generated Project Context:</h3>
           <div class="flex items-center space-x-2">
             <button
-              class="px-3 py-1 text-xs border rounded-md"
-              :class="props.hasActiveLlmKey ? 'border-blue-500 text-blue-600 hover:bg-blue-50' : 'border-gray-300 text-gray-400 cursor-not-allowed'"
+              class="auto-context-button"
+              :class="props.hasActiveLlmKey && !props.isAutoContextLoading ? 'auto-context-button--enabled' : 'auto-context-button--disabled'"
               :disabled="!props.hasActiveLlmKey || props.isAutoContextLoading"
               data-testid="auto-context-btn"
               @click="emit('auto-context')"
             >
-              {{ props.isAutoContextLoading ? 'Auto selecting…' : 'Auto context' }}
+              <span>
+                {{ props.isAutoContextLoading ? 'Auto selecting…' : 'Auto context' }}
+              </span>
             </button>
             <button
               class="text-xs text-blue-600 hover:underline"
