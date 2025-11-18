@@ -62,6 +62,7 @@ type App struct {
 	useCustomIgnore             bool
 	projectGitignore            *gitignore.GitIgnore // Compiled .gitignore for the current project
 	autoContextService          *AutoContextService
+	historyManager              *HistoryManager
 	llmCache                    cachedProvider
 	autoContextButtonTexture    string
 }
@@ -74,6 +75,7 @@ func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 	a.contextGenerator = NewContextGenerator(a)
 	a.autoContextService = NewAutoContextService()
+	a.historyManager = NewHistoryManager(a)
 	a.fileWatcher = NewWatchman(a)
 	a.useGitignore = true    // Default to true, matching frontend
 	a.useCustomIgnore = true // Default to true, matching frontend
@@ -87,6 +89,11 @@ func (a *App) startup(ctx context.Context) {
 	a.configPath = configFilePath
 
 	a.loadSettings()
+	// Initialize history after config path is set
+	if err := a.historyManager.LoadHistory(); err != nil {
+		runtime.LogWarningf(a.ctx, "Failed to load prompt history: %v", err)
+	}
+
 	// Ensure CustomPromptRules has a default if it's empty after loading
 	if strings.TrimSpace(a.settings.CustomPromptRules) == "" {
 		a.settings.CustomPromptRules = defaultCustomPromptRulesContent
@@ -97,14 +104,15 @@ func (a *App) startup(ctx context.Context) {
 
 func (a *App) initAutoContextButtonTexture() {
 	params := labgradient.SliceParams{
-		L:                80.0,
-		Radius:           60.0,
-		CenterAngleDeg:   320.0,
-		HorizontalSpanDeg: 60.0,
-		VerticalSpanDeg:   30.0,
+		L:               80.0,
+		Radius:          60.0,
+		VerticalSpanDeg: 30.0,
+		// CenterAngleDeg and HorizontalSpanDeg are ignored by GeneratePanoramicTexture
 	}
 
-	texture, err := labgradient.GenerateLabSliceTexture(512, 64, params)
+	// Generate a seamless 360-degree texture.
+	// Width 3072 provides ~8.5 pixels per degree (matching previous 512px/60deg).
+	texture, err := labgradient.GeneratePanoramicTexture(3072, 64, params)
 	if err != nil {
 		runtime.LogErrorf(a.ctx, "failed to generate auto-context LAB texture: %v", err)
 		return
@@ -1117,4 +1125,29 @@ func (a *App) SetUseCustomIgnore(enabled bool) error {
 func (a *App) emitAutoContextError(message string) {
 	runtime.LogError(a.ctx, message)
 	runtime.EventsEmit(a.ctx, "autoContextError", message)
+}
+
+// SaveRepoScan saves the repo scan content to shotgun_reposcan.md in the root directory
+func (a *App) SaveRepoScan(rootDir string, content string) error {
+	if rootDir == "" {
+		return errors.New("root directory is empty")
+	}
+	filePath := filepath.Join(rootDir, "shotgun_reposcan.md")
+	return os.WriteFile(filePath, []byte(content), 0644)
+}
+
+// LoadRepoScan loads the repo scan content from shotgun_reposcan.md in the root directory
+func (a *App) LoadRepoScan(rootDir string) (string, error) {
+	if rootDir == "" {
+		return "", errors.New("root directory is empty")
+	}
+	filePath := filepath.Join(rootDir, "shotgun_reposcan.md")
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", nil // Return empty string if file doesn't exist
+		}
+		return "", err
+	}
+	return string(content), nil
 }

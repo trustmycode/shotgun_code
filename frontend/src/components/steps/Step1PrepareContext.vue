@@ -34,8 +34,8 @@
           <div class="flex items-center space-x-2">
             <button
               class="auto-context-button"
-              :class="props.hasActiveLlmKey && !props.isAutoContextLoading ? 'auto-context-button--enabled' : 'auto-context-button--disabled'"
-              :disabled="!props.hasActiveLlmKey || props.isAutoContextLoading"
+              :class="isAutoContextEnabled ? 'auto-context-button--enabled' : 'auto-context-button--disabled'"
+              :disabled="!isAutoContextEnabled"
               data-testid="auto-context-btn"
               @click="emit('auto-context')"
             >
@@ -49,9 +49,32 @@
               data-testid="setup-api-key-link"
               @click="emit('open-llm-settings')"
             >
-              Setup API key
+              Setup model
             </button>
           </div>
+        </div>
+        <div
+          class="flex items-center justify-end mb-2 text-xs text-gray-600"
+          title="Repo scan is attached to your context extraction prompt to better understand the repository structure and extract the right context. Create it on shotgunpro.dev"
+        >
+          <label class="flex items-center space-x-2 cursor-pointer">
+            <input
+              type="checkbox"
+              v-model="includeRepoScan"
+              class="h-3 w-3 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+            />
+            <span>Use repo scan:</span>
+            <span class="font-mono">
+              {{ repoScanTokensLabel }}
+            </span>
+            <button
+              type="button"
+              class="text-blue-600 hover:underline ml-1"
+              @click="openRepoScanEditor"
+            >
+              edit
+            </button>
+          </label>
         </div>
         <textarea
           :value="generatedContext"
@@ -82,12 +105,22 @@
     <p v-else class="text-xs text-gray-500 mt-2 flex-grow flex justify-center items-center">
       Select a project folder to begin.
     </p>
+
+    <RepoScanModal
+      :isVisible="isRepoScanModalVisible"
+      :initialScan="repoScanContent"
+      @save="handleSaveRepoScan"
+      @cancel="isRepoScanModalVisible = false"
+    />
   </div>
 </template>
 
+
 <script setup>
 import { defineProps, ref, computed, defineEmits, watch } from 'vue';
-import { ClipboardSetText as WailsClipboardSetText } from '../../../wailsjs/runtime/runtime';
+import { ClipboardSetText as WailsClipboardSetText, BrowserOpenURL } from '../../../wailsjs/runtime/runtime';
+import { SaveRepoScan, LoadRepoScan } from '../../../wailsjs/go/main/App';
+import RepoScanModal from '../RepoScanModal.vue';
 
 const props = defineProps({
   generatedContext: {
@@ -137,6 +170,28 @@ const copyButtonText = ref('Copy All');
 const localUserTask = ref(props.userTask);
 let userTaskInputDebounceTimer = null;
 
+const includeRepoScan = ref(false);
+const repoScanTokenCount = ref(0);
+const repoScanContent = ref('');
+const isRepoScanModalVisible = ref(false);
+
+const repoScanTokensLabel = computed(() => {
+  if (repoScanTokenCount.value === 0) {
+    return 'empty';
+  }
+  return `${repoScanTokenCount.value} tokens`;
+});
+
+const isAutoContextEnabled = computed(() => {
+  if (!props.hasActiveLlmKey || props.isAutoContextLoading) {
+    return false;
+  }
+  if (!localUserTask.value) {
+    return false;
+  }
+  return localUserTask.value.trim().length > 0;
+});
+
 watch(() => props.userTask, (newValue) => {
   if (newValue !== localUserTask.value) {
     localUserTask.value = newValue;
@@ -151,6 +206,42 @@ watch(localUserTask, (currentValue) => {
     }
   }, 300);
 });
+
+// Watch for project root changes to load repo scan
+watch(() => props.projectRoot, async (newRoot) => {
+  if (newRoot) {
+    try {
+      const content = await LoadRepoScan(newRoot);
+      if (content) {
+        repoScanContent.value = content;
+        includeRepoScan.value = true;
+        updateTokenCount(content);
+      } else {
+        repoScanContent.value = '';
+        includeRepoScan.value = false;
+        repoScanTokenCount.value = 0;
+      }
+    } catch (err) {
+      console.error("Failed to load repo scan:", err);
+      repoScanContent.value = '';
+      includeRepoScan.value = false;
+      repoScanTokenCount.value = 0;
+    }
+  } else {
+    repoScanContent.value = '';
+    includeRepoScan.value = false;
+    repoScanTokenCount.value = 0;
+  }
+}, { immediate: true });
+
+function updateTokenCount(text) {
+  // Simple estimation: length / 4
+  if (!text) {
+    repoScanTokenCount.value = 0;
+    return;
+  }
+  repoScanTokenCount.value = Math.ceil(text.length / 4);
+}
 
 async function copyGeneratedContextToClipboard() {
   if (!props.generatedContext) return;
@@ -174,6 +265,37 @@ async function copyGeneratedContextToClipboard() {
     setTimeout(() => {
       copyButtonText.value = 'Copy All';
     }, 2000);
+  }
+}
+
+function openRepoScanEditor() {
+  isRepoScanModalVisible.value = true;
+}
+
+async function handleSaveRepoScan(content) {
+  repoScanContent.value = content;
+  updateTokenCount(content);
+  isRepoScanModalVisible.value = false;
+  
+  if (content && props.projectRoot) {
+    try {
+      await SaveRepoScan(props.projectRoot, content);
+      includeRepoScan.value = true;
+    } catch (err) {
+      console.error("Failed to save repo scan:", err);
+      // Optionally show error to user
+    }
+  } else if (!content && props.projectRoot) {
+     // If content is empty, maybe we should delete the file? 
+     // For now, just saving empty string is fine or we can leave it. 
+     // The requirement says "if there is a repo scan... it is picked up automatically".
+     // If user clears it, we probably should save empty string.
+     try {
+      await SaveRepoScan(props.projectRoot, "");
+      includeRepoScan.value = false;
+    } catch (err) {
+      console.error("Failed to clear repo scan:", err);
+    }
   }
 }
 </script>

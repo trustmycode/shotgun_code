@@ -1,181 +1,207 @@
 <template>
-  <div class="p-6 flex flex-col h-full">
-    <h2 class="text-xl font-semibold text-gray-800 mb-2">Step 3: Execute Prompt</h2>
-    <ul class="list-disc list-inside text-gray-600 mb-2">
-      <li>For now go to Google AI studio, copy the prompt and paste it there with 2.5 pro model with 0.1 temperature. It will give you <b>the diff</b></li>
-      <li>Then open any agentic code tool and ask 'apply diff' + copy-paste the diff.</li>
-    </ul>
-    <hr class="my-4" />
-    <div class="text-gray-600 mb-2">
-      <strong>Prepare the Diff to Apply</strong>
-      <br>
-      This tool will split the diff into smaller parts to make it easier to apply.
-    </div>
-    <div class="mb-4">
-      <label for="shotgun-git-diff-input" class="block text-sm font-bold text-gray-700 mb-1">Git Diff Output:</label>
-      <textarea
-        id="shotgun-git-diff-input"
-        v-model="localShotgunGitDiffInput"
-        rows="15"
-        class="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 text-sm font-mono"
-        placeholder="Paste the git diff output here, e.g., diff --git a/file.txt b/file.txt..."
-      ></textarea>
+  <div class="flex h-full overflow-hidden border-t border-gray-200">
+    <!-- Sidebar: History List -->
+    <div class="w-72 bg-gray-50 border-r border-gray-200 flex flex-col flex-shrink-0">
+      <div class="p-3 border-b border-gray-200 flex justify-between items-center bg-gray-100">
+        <h3 class="font-semibold text-gray-700 text-sm">Prompt History</h3>
+        <button 
+            @click="loadHistory" 
+            title="Refresh History"
+            class="text-gray-500 hover:text-blue-600 transition-colors"
+        >
+            ↻
+        </button>
+      </div>
+      
+      <div v-if="isLoading" class="p-4 text-center text-gray-500 text-xs">
+        Loading...
+      </div>
+      
+      <div v-else-if="historyItems.length === 0" class="p-4 text-center text-gray-500 text-xs">
+        No history yet. Execute a prompt in Step 2.
+      </div>
+
+      <div v-else class="overflow-y-auto flex-1">
+        <ul>
+          <li 
+            v-for="item in historyItems" 
+            :key="item.id" 
+            @click="selectItem(item)" 
+            class="p-3 border-b border-gray-100 cursor-pointer hover:bg-white transition-colors"
+            :class="{'bg-blue-50 border-l-4 border-l-blue-500': selectedItem && selectedItem.id === item.id, 'border-l-4 border-l-transparent': !selectedItem || selectedItem.id !== item.id}"
+          >
+            <div class="text-sm font-medium text-gray-800 truncate mb-1" :title="item.userTask">
+                {{ item.userTask || 'No task description' }}
+            </div>
+            <div class="text-xs text-gray-500 flex justify-between">
+                <span>{{ formatTime(item.timestamp) }}</span>
+                <span>{{ formatDate(item.timestamp) }}</span>
+            </div>
+          </li>
+        </ul>
+      </div>
+      
+      <div class="p-2 border-t border-gray-200 bg-gray-100 text-center">
+         <button @click="clearHistory" class="text-xs text-red-500 hover:text-red-700">Clear History</button>
+      </div>
     </div>
 
-    <div class="mb-4">
-      <label for="split-line-limit" class="block text-sm font-bold text-gray-700 mb-1">Approx. Lines per Split:</label>
-      <p class="text-gray-600 mb-2 text-xs">
-        Note: This tries to split the diff into roughly the specified number of lines while keeping original hunks intact.
-        The exact number of lines per split is not guaranteed, but the diff will be divided into as many coherent parts as possible.
-        <br>
-        Leave this unchanged if you don't want to split the diff.
-      </p>
-      <input
-        type="number"
-        id="split-line-limit"
-        v-model.number="localSplitLineLimit"
-        min="50"
-        step="50"
-        class="w-1/8 p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 text-sm"
-      />
-      <p class="text-gray-600 mb-2 text-xs mt-2">
-        Total number of lines: {{ shotgunGitDiffInputLines }} <a href="#" class="text-blue-500" title="Reset to this value" @click="resetSplitLineLimit">(reset to this value)</a>
-      </p>
+    <!-- Main Content: Split Pane -->
+    <div class="flex-1 flex flex-col h-full overflow-hidden bg-white relative" v-if="selectedItem">
+        <div class="flex-1 flex flex-row overflow-hidden">
+             <!-- Request Pane -->
+             <div class="w-1/2 flex flex-col border-r border-gray-200">
+                 <div class="p-2 border-b border-gray-200 flex justify-between items-center bg-gray-50">
+                     <span class="font-bold text-gray-700 text-xs uppercase tracking-wider">Raw Request</span>
+                     <button @click="copyText(selectedItem.constructedPrompt, 'req')" class="text-xs text-blue-600 hover:text-blue-800 font-medium">
+                        {{ copyReqBtnText }}
+                     </button>
+                 </div>
+                 <div class="relative flex-grow">
+                    <textarea 
+                        readonly 
+                        class="absolute inset-0 w-full h-full p-3 text-xs font-mono resize-none focus:outline-none" 
+                        :value="selectedItem.constructedPrompt"
+                    ></textarea>
+                 </div>
+             </div>
+             
+             <!-- Response Pane -->
+             <div class="w-1/2 flex flex-col">
+                 <div class="p-2 border-b border-gray-200 flex justify-between items-center bg-gray-50">
+                     <span class="font-bold text-gray-700 text-xs uppercase tracking-wider">Response</span>
+                     <div class="flex items-center space-x-3">
+                        <button @click="copyText(selectedItem.response, 'res')" class="text-xs text-blue-600 hover:text-blue-800 font-medium">
+                            {{ copyResBtnText }}
+                        </button>
+                     </div>
+                 </div>
+                 <div class="relative flex-grow">
+                    <textarea 
+                        readonly 
+                        class="absolute inset-0 w-full h-full p-3 text-xs font-mono resize-none focus:outline-none bg-gray-50" 
+                        :value="selectedItem.response"
+                    ></textarea>
+                 </div>
+             </div>
+        </div>
     </div>
-
-    <button
-      @click="handleSplitDiff"
-      :disabled="!localShotgunGitDiffInput.trim() || localSplitLineLimit <= 0"
-      class="px-6 py-2 bg-blue-600 text-white font-semibold rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 self-start disabled:bg-gray-400"
-    >
-      {{ localSplitLineLimit === shotgunGitDiffInputLines ? 'Proceed to Apply' : 'Split Diff & Proceed to Apply' }}
-    </button>
+    
+    <!-- Empty State -->
+    <div v-else class="flex-1 flex flex-col items-center justify-center text-gray-400 bg-gray-50">
+        <div class="text-4xl mb-2">🗂️</div>
+        <p>Select an item from history to view details</p>
+    </div>
+    
+    <!-- Hidden Split Limit Input (for compatibility/defaults) -->
+    <input type="hidden" :value="localSplitLineLimit" />
   </div>
 </template>
 
 <script setup>
-import { ref, watch, computed, onMounted, onBeforeUnmount } from 'vue';
+import { ref, onMounted, defineEmits, defineProps, watch } from 'vue';
+import { GetPromptHistory, ClearPromptHistory } from '../../../wailsjs/go/main/App';
+import { LogInfo, LogError } from '../../../wailsjs/runtime/runtime';
+
+const props = defineProps({
+  initialGitDiff: { type: String, default: '' },
+  initialSplitLineLimit: { type: Number, default: 0 }
+});
 
 const emit = defineEmits(['action', 'update:shotgunGitDiff', 'update:splitLineLimit']);
 
-const props = defineProps({
-  initialGitDiff: {
-    type: String,
-    default: ''
-  },
-  initialSplitLineLimit: {
-    type: Number,
-    default: 0
-  }
-});
+const historyItems = ref([]);
+const selectedItem = ref(null);
+const isLoading = ref(false);
+const localSplitLineLimit = ref(500); // Default
 
-
-const localShotgunGitDiffInput = ref(props.initialGitDiff);
-
-const localSplitLineLimit = ref(props.initialSplitLineLimit > 0 ? props.initialSplitLineLimit : 500);
+const copyReqBtnText = ref('Copy All');
+const copyResBtnText = ref('Copy All');
 
 onMounted(() => {
-    
-  localShotgunGitDiffInput.value = props.initialGitDiff;
-
-    
-  if (props.initialSplitLineLimit > 0) {
-    localSplitLineLimit.value = props.initialSplitLineLimit;
-  } else if (localSplitLineLimit.value <= 0) {
-    localSplitLineLimit.value = 500;
-  }
-});
-
-const shotgunGitDiffInputLines = computed(() => {
-  return localShotgunGitDiffInput.value ? localShotgunGitDiffInput.value.split('\n').length : 0;
-});
-
-watch(() => props.initialGitDiff, (newVal, oldVal) => {
-        if (newVal !== localShotgunGitDiffInput.value) {
-                localShotgunGitDiffInput.value = newVal;
-            }
-});
-
-watch(() => props.initialSplitLineLimit, (newVal, oldVal) => {
-        if (newVal > 0 && newVal !== localSplitLineLimit.value) {
-        localSplitLineLimit.value = newVal;
-    } else if (newVal <= 0 && localSplitLineLimit.value !== 500 && props.initialGitDiff === '') {
-        localSplitLineLimit.value = 500;
+    loadHistory();
+    if (props.initialSplitLineLimit > 0) {
+        localSplitLineLimit.value = props.initialSplitLineLimit;
     }
 });
 
-let diffInputDebounceTimer = null;
-watch(localShotgunGitDiffInput, (newVal, oldVal) => {
-    
-    clearTimeout(diffInputDebounceTimer);
-    
-    diffInputDebounceTimer = setTimeout(() => {
-                if (newVal !== props.initialGitDiff) {
-                        emit('update:shotgunGitDiff', newVal);
+// Refresh history when this component becomes visible (if parent keeps it alive) or via prop changes if needed.
+// Since the parent uses v-if, mounted is sufficient.
+
+async function loadHistory() {
+    isLoading.value = true;
+    try {
+        const items = await GetPromptHistory();
+        // Items are expected to be sorted newest first by backend
+        historyItems.value = items || [];
+        if (historyItems.value.length > 0 && !selectedItem.value) {
+            selectedItem.value = historyItems.value[0];
+        }
+    } catch (err) {
+        console.error("Failed to load history:", err);
+        LogError(`Failed to load history: ${err}`);
+    } finally {
+        isLoading.value = false;
+    }
+}
+
+async function clearHistory() {
+    if (!confirm("Are you sure you want to clear the prompt history?")) return;
+    try {
+        await ClearPromptHistory();
+        historyItems.value = [];
+        selectedItem.value = null;
+        LogInfo("History cleared.");
+    } catch (err) {
+        LogError(`Failed to clear history: ${err}`);
+    }
+}
+
+function selectItem(item) {
+    selectedItem.value = item;
+}
+
+function formatTime(ts) {
+    if (!ts) return '';
+    return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+function formatDate(ts) {
+    if (!ts) return '';
+    return new Date(ts).toLocaleDateString();
+}
+
+async function copyText(text, type) {
+    if (!text) return;
+    try {
+        await navigator.clipboard.writeText(text);
+        if (type === 'req') {
+            copyReqBtnText.value = 'Copied!';
+            setTimeout(() => copyReqBtnText.value = 'Copy All', 2000);
         } else {
-                    }
-        if (newVal && newVal.trim() !== '') {
-            const lines = newVal.split('\n').length;
-            const currentLimit = localSplitLineLimit.value;
-
-            if (currentLimit === 500 || (currentLimit !== lines && currentLimit === (newVal.substring(0, newVal.length - (newVal.split('\n').pop().length +1)).split('\n').length))) {
-                if (lines > 0 && lines !== currentLimit) {
-                    localSplitLineLimit.value = lines;
-                }
-            } else if (lines === 0 && currentLimit !== 500){
-                 localSplitLineLimit.value = 500;
-            }
-        } else if ((!newVal || newVal.trim() === '') && localSplitLineLimit.value !== 500) {
-            localSplitLineLimit.value = 500;
+            copyResBtnText.value = 'Copied!';
+            setTimeout(() => copyResBtnText.value = 'Copy All', 2000);
         }
-    }, 300);
-});
-
-let limitDebounceTimer = null;
-watch(localSplitLineLimit, (newVal) => {
-    clearTimeout(limitDebounceTimer);
-    limitDebounceTimer = setTimeout(() => {
-        if (newVal > 0 && newVal !== props.initialSplitLineLimit) { 
-            emit('update:splitLineLimit', newVal);
-        } else if (newVal <= 0 && props.initialSplitLineLimit > 0) {
-        }
-    }, 300);
-});
-
-onBeforeUnmount(() => {
-    // Clear any pending debounced updates
-  clearTimeout(diffInputDebounceTimer);
-  clearTimeout(limitDebounceTimer);
-  
-  // Immediately emit the current value of localShotgunGitDiffInput if it's different from the prop
-    if (localShotgunGitDiffInput.value !== props.initialGitDiff) {
-        emit('update:shotgunGitDiff', localShotgunGitDiffInput.value);
-  } else {
-       }
-
-  // Immediately emit the current value of localSplitLineLimit if it's valid and different from the prop
-    if (localSplitLineLimit.value > 0 && localSplitLineLimit.value !== props.initialSplitLineLimit) {
-        emit('update:splitLineLimit', localSplitLineLimit.value);
-  } else {
-      }
-});
-
-function handleSplitDiff() {
-  if (!localShotgunGitDiffInput.value.trim() || localSplitLineLimit.value <= 0) {
-    return;
-  }
-  emit('action', 'executePromptAndSplitDiff', {
-    gitDiff: localShotgunGitDiffInput.value,
-    lineLimit: localSplitLineLimit.value
-  });
+    } catch (err) {
+        console.error('Copy failed:', err);
+    }
 }
 
-const resetSplitLineLimit = () => {
-  if (shotgunGitDiffInputLines.value > 0) {
-    localSplitLineLimit.value = shotgunGitDiffInputLines.value;
-  } else {
-    localSplitLineLimit.value = 500;
-  }
+function useAsDiff(content) {
+    if (!content) return;
+    
+    // Update parent state
+    emit('update:shotgunGitDiff', content);
+    
+    // Trigger split action
+    emit('action', 'executePromptAndSplitDiff', {
+        gitDiff: content,
+        lineLimit: localSplitLineLimit.value
+    });
 }
-</script> 
 
+// Expose methods for parent if needed (e.g. to refresh when Step 2 completes)
+defineExpose({
+    loadHistory
+});
+</script>

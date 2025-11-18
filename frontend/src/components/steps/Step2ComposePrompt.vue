@@ -1,9 +1,6 @@
 <template>
-  <div class="p-4 h-full flex flex-col">
-    <p class="text-gray-700 mb-4 text-center text-sm">
-      Write the task for the LLM in the central column and copy the final prompt
-    </p>
-
+  <div class="p-4 h-full flex flex-col relative">
+    
     <CustomRulesModal
       :is-visible="isPromptRulesModalVisible"
       :initial-rules="currentPromptRulesForModal"
@@ -13,7 +10,32 @@
       @cancel="handleCancelPromptRules"
     />
 
+    <!-- Top Bar: Instruction or Execute Button -->
+    <div class="flex items-center justify-end mb-4 space-x-4 min-h-[32px]">
+        <div class="flex items-center space-x-2">
+            <button
+                class="auto-context-button"
+                :class="isExecuteEnabled ? 'auto-context-button--enabled' : 'auto-context-button--disabled'"
+                :disabled="!isExecuteEnabled"
+                @click="handleExecutePrompt"
+                title="Execute prompt with configured LLM"
+            >
+                <span>
+                    {{ isExecuting ? 'Executing...' : 'Execute Prompt' }}
+                </span>
+            </button>
+            <button
+                class="text-xs text-blue-600 hover:underline"
+                type="button"
+                @click="emit('open-llm-settings')"
+            >
+                Setup model
+            </button>
+        </div>
+    </div>
+
     <div class="flex-grow flex flex-row space-x-4 overflow-hidden">
+      <!-- Left Column: Task, Rules, Files -->
       <div class="w-1/2 flex flex-col space-y-3 overflow-y-auto p-2 border border-gray-200 rounded-md bg-gray-50">
         <div>
           <label for="user-task-ai" class="block text-sm font-medium text-gray-700 mb-1">Your task for AI:</label>
@@ -55,6 +77,7 @@
         </div>
       </div>
 
+      <!-- Right Column: Final Prompt -->
       <div class="w-1/2 flex flex-col overflow-y-auto p-2 border border-gray-200 rounded-md bg-white">
         <div class="flex justify-between items-center mb-2">
           <div class="flex items-center space-x-2">
@@ -107,13 +130,43 @@
         </p>
       </div>
     </div>
+
+    <!-- Response Modal -->
+    <div v-if="isResponseModalVisible" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div class="bg-white rounded-lg p-6 w-[90%] h-[90%] flex flex-col shadow-xl">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-semibold">LLM Response</h3>
+                <button @click="closeResponseModal" class="text-gray-500 hover:text-gray-700 text-2xl">&times;</button>
+            </div>
+            <textarea 
+                readonly 
+                class="flex-grow p-4 border border-gray-300 rounded-md font-mono text-sm mb-4 resize-none bg-gray-50 focus:outline-none" 
+                :value="currentResponse"
+            ></textarea>
+            <div class="flex justify-end space-x-3">
+                 <button 
+                    @click="copyResponse" 
+                    class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+                 >
+                    {{ copyResponseButtonText }}
+                 </button>
+                 <button 
+                    @click="closeResponseModal" 
+                    class="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300 transition-colors"
+                 >
+                    Close
+                 </button>
+            </div>
+        </div>
+    </div>
+
   </div>
 </template>
 
 <script setup>
 import { ref, watch, onMounted, computed } from 'vue';
 import { ClipboardSetText as WailsClipboardSetText } from '../../../wailsjs/runtime/runtime';
-import { GetCustomPromptRules, SetCustomPromptRules } from '../../../wailsjs/go/main/App';
+import { GetCustomPromptRules, SetCustomPromptRules, ExecuteLLMPrompt } from '../../../wailsjs/go/main/App';
 import { LogInfo as LogInfoRuntime, LogError as LogErrorRuntime } from '../../../wailsjs/runtime/runtime';
 import CustomRulesModal from '../CustomRulesModal.vue';
 
@@ -142,10 +195,14 @@ const props = defineProps({
   finalPrompt: {
     type: String,
     default: ''
+  },
+  hasActiveLlmKey: {
+    type: Boolean,
+    default: false
   }
 });
 
-const emit = defineEmits(['update:finalPrompt', 'update:userTask', 'update:rulesContent']);
+const emit = defineEmits(['update:finalPrompt', 'update:userTask', 'update:rulesContent', 'open-llm-settings']);
 
 const promptTemplates = {
   dev: { name: 'Dev', content: devTemplateContentFromFile },
@@ -165,6 +222,12 @@ let userTaskInputDebounceTimer = null;
 // Modal state for prompt rules
 const isPromptRulesModalVisible = ref(false);
 const currentPromptRulesForModal = ref('');
+
+// Response Modal State
+const isResponseModalVisible = ref(false);
+const currentResponse = ref('');
+const isExecuting = ref(false);
+const copyResponseButtonText = ref('Copy Response');
 
 const isFirstMount = ref(true);
 
@@ -197,6 +260,10 @@ const tooltipText = computed(() => {
   const count = charCount.value;
   const tokens = Math.round(count / 3);
   return `Your text contains ${count} symbols which is roughly equivalent to ${tokens} tokens`;
+});
+
+const isExecuteEnabled = computed(() => {
+    return props.hasActiveLlmKey && localUserTask.value && localUserTask.value.trim().length > 0 && !isExecuting.value;
 });
 
 const DEFAULT_RULES = `no additional rules`;
@@ -326,6 +393,54 @@ async function handleSavePromptRules(newRules) {
 function handleCancelPromptRules() {
   isPromptRulesModalVisible.value = false;
 }
+
+async function handleExecutePrompt() {
+    if (!isExecuteEnabled.value) return;
+    
+    isExecuting.value = true;
+    LogInfoRuntime('Executing LLM prompt...');
+    try {
+        const result = await ExecuteLLMPrompt(localUserTask.value, props.finalPrompt);
+        if (result && result.response) {
+            currentResponse.value = result.response;
+            isResponseModalVisible.value = true;
+            LogInfoRuntime('LLM Execution successful.');
+        } else {
+             throw new Error("Received empty response from backend.");
+        }
+    } catch (err) {
+        console.error("Error executing prompt:", err);
+        LogErrorRuntime(`Error executing prompt: ${err.message || err}`);
+        // Optionally show error in a toast or the modal
+        currentResponse.value = `Error: ${err.message || err}`;
+        isResponseModalVisible.value = true;
+    } finally {
+        isExecuting.value = false;
+    }
+}
+
+function closeResponseModal() {
+    isResponseModalVisible.value = false;
+    currentResponse.value = '';
+}
+
+async function copyResponse() {
+    if (!currentResponse.value) return;
+    try {
+        await navigator.clipboard.writeText(currentResponse.value);
+        copyResponseButtonText.value = 'Copied!';
+        setTimeout(() => {
+            copyResponseButtonText.value = 'Copy Response';
+        }, 2000);
+    } catch (err) {
+        console.error('Failed to copy response:', err);
+        copyResponseButtonText.value = 'Failed!';
+         setTimeout(() => {
+            copyResponseButtonText.value = 'Copy Response';
+        }, 2000);
+    }
+}
+
 
 defineExpose({});
 </script>

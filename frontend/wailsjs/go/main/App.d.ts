@@ -4,6 +4,10 @@ import {main} from '../models';
 import {provider} from '../models';
 import {context} from '../models';
 
+export function ClearPromptHistory():Promise<void>;
+
+export function ExecuteLLMPrompt(arg1:string,arg2:string):Promise<main.PromptHistoryItem>;
+
 export function GetAutoContextButtonTexture():Promise<string>;
 
 export function GetCustomIgnoreRules():Promise<string>;
@@ -12,15 +16,21 @@ export function GetCustomPromptRules():Promise<string>;
 
 export function GetLlmSettings():Promise<main.LLMSettings>;
 
+export function GetPromptHistory():Promise<Array<main.PromptHistoryItem>>;
+
 export function HasActiveLlmKey():Promise<boolean>;
 
 export function ListFiles(arg1:string):Promise<Array<main.FileNode>>;
 
 export function ListLlmModels(arg1:string):Promise<Array<provider.ModelInfo>>;
 
+export function LoadRepoScan(arg1:string):Promise<string>;
+
 export function RequestAutoContextSelection(arg1:string,arg2:Array<string>,arg3:string):Promise<Array<string>>;
 
 export function RequestShotgunContextGeneration(arg1:string,arg2:Array<string>):Promise<void>;
+
+export function SaveRepoScan(arg1:string,arg2:string):Promise<void>;
 
 export function SelectDirectory():Promise<string>;
 

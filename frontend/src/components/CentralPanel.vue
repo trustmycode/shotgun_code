@@ -15,7 +15,21 @@
       :user-task="props.userTask"
       @update:user-task="(val) => emit('update:userTask', val)"
     />
-    <Step2ComposePrompt v-if="currentStep === 2" @action="handleAction" ref="step2Ref" :file-list-context="props.shotgunPromptContext" @update:finalPrompt="(val) => emit('update-composed-prompt', val)" :platform="props.platform" :user-task="props.userTask" :rules-content="props.rulesContent" :final-prompt="props.finalPrompt" @update:userTask="(val) => emit('update:userTask', val)" @update:rulesContent="(val) => emit('update:rulesContent', val)" />
+    <Step2ComposePrompt 
+      v-if="currentStep === 2" 
+      @action="handleAction" 
+      ref="step2Ref" 
+      :file-list-context="props.shotgunPromptContext" 
+      @update:finalPrompt="(val) => emit('update-composed-prompt', val)" 
+      :platform="props.platform" 
+      :user-task="props.userTask" 
+      :rules-content="props.rulesContent" 
+      :final-prompt="props.finalPrompt" 
+      :has-active-llm-key="props.hasActiveLlmKey"
+      @update:userTask="(val) => emit('update:userTask', val)" 
+      @update:rulesContent="(val) => emit('update:rulesContent', val)" 
+      @open-llm-settings="emit('open-llm-settings')"
+    />
     <Step3ExecutePrompt v-if="currentStep === 3" @action="handleAction" ref="step3Ref" :initial-git-diff="initialGitDiff" :initial-split-line-limit="initialSplitLineLimit" @update:shotgunGitDiff="(val) => emit('update:shotgunGitDiff', val)" @update:splitLineLimit="(val) => emit('update:splitLineLimit', val)" />
     <Step4ApplyPatch v-if="currentStep === 4" @action="handleAction" :split-diffs="props.splitDiffs" :is-loading="props.isLoadingSplitDiffs" :platform="props.platform" :split-line-limit="initialSplitLineLimit" />
   </main>

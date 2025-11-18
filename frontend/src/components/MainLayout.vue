@@ -497,7 +497,16 @@ function stopResize() {
 onMounted(() => {
   EventsOn("shotgunContextGenerated", (output) => {
     addLog("Wails event: shotgunContextGenerated RECEIVED", 'debug', 'bottom');
-    shotgunPromptContext.value = output;
+    
+    if (shotgunPromptContext.value !== output) {
+      shotgunPromptContext.value = output;
+      // Context changed. If we are NOT on Step 2 (which handles live updates),
+      // clear the stale finalPrompt so it regenerates when Step 2 mounts.
+      if (currentStep.value !== 2) {
+        finalPrompt.value = '';
+      }
+    }
+
     isGeneratingContext.value = false;
     addLog(`Shotgun context updated (${output.length} chars).`, 'success');
     const step1 = steps.value.find(s => s.id === 1);
@@ -641,11 +650,21 @@ function handleCustomRulesUpdated() {
 }
 
 function handleUserTaskUpdate(val) {
-  userTask.value = val;
+  if (userTask.value !== val) {
+    userTask.value = val;
+    if (currentStep.value !== 2) {
+      finalPrompt.value = '';
+    }
+  }
 }
 
 function handleRulesContentUpdate(val) {
-  rulesContent.value = val;
+  if (rulesContent.value !== val) {
+    rulesContent.value = val;
+    if (currentStep.value !== 2) {
+      finalPrompt.value = '';
+    }
+  }
 }
 
 // Add handlers for the new updates
