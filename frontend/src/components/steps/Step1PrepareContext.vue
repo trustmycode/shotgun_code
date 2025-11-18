@@ -78,22 +78,24 @@
       <div v-if="generatedContext && !generatedContext.startsWith('Error:')" class="flex-grow flex flex-col">
         <div class="flex items-center justify-between mb-1">
           <h3 class="text-sm font-semibold text-gray-700">Generated Project Context:</h3>
+          <button
+            @click="copyGeneratedContextToClipboard"
+            class="px-3 py-1 bg-gray-200 text-gray-700 text-xs font-semibold rounded-md hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-opacity-50"
+          >
+            {{ copyButtonText }}
+          </button>
         </div>
-        <textarea
-          :value="generatedContext"
-          rows="10"
-          readonly
-          class="w-full p-2 border border-gray-300 rounded-md shadow-sm bg-gray-50 font-mono text-xs flex-grow"
+        <LargeTextViewer
+          class="flex-grow"
+          :content="generatedContext"
+          label=""
+          :platform="props.platform"
           placeholder="Context will appear here. If empty, ensure files are selected and not all excluded."
-          style="min-height: 150px;"
-        ></textarea>
-        <button
-          v-if="generatedContext"
-          @click="copyGeneratedContextToClipboard"
-          class="mt-2 px-4 py-1 bg-gray-200 text-gray-700 font-semibold rounded-md hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-opacity-50 self-start"
-        >
-          {{ copyButtonText }}
-        </button>
+          copy-button-label="Copy All"
+          min-height="200px"
+          :max-display-length="10000"
+          :show-copy-button="false"
+        />
       </div>
       <div v-else-if="generatedContext && generatedContext.startsWith('Error:')" class="text-red-500 p-3 border border-red-300 rounded bg-red-50 flex-grow flex flex-col justify-center items-center">
         <h4 class="font-semibold mb-1">Error Generating Context:</h4>
@@ -121,9 +123,10 @@
 
 <script setup>
 import { defineProps, ref, computed, defineEmits, watch } from 'vue';
-import { ClipboardSetText as WailsClipboardSetText, BrowserOpenURL } from '../../../wailsjs/runtime/runtime';
+import { ClipboardSetText as WailsClipboardSetText } from '../../../wailsjs/runtime/runtime';
 import { SaveRepoScan, LoadRepoScan } from '../../../wailsjs/go/main/App';
 import RepoScanModal from '../RepoScanModal.vue';
+import LargeTextViewer from '../common/LargeTextViewer.vue';
 
 const props = defineProps({
   generatedContext: {
@@ -259,26 +262,37 @@ function updateTokenCount(text) {
 async function copyGeneratedContextToClipboard() {
   if (!props.generatedContext) return;
   try {
-    await navigator.clipboard.writeText(props.generatedContext);
-    //if (props.platform === 'darwin') {
-    //  await WailsClipboardSetText(props.generatedContext);
-    //} else {
-    //  await navigator.clipboard.writeText(props.generatedContext);
-    //}
-    copyButtonText.value = 'Copied!';
-    setTimeout(() => {
-      copyButtonText.value = 'Copy All';
-    }, 2000);
-  } catch (err) {
-    console.error('Failed to copy context: ', err);
-    if (props.platform === 'darwin' && err) {
-      console.error('darvin ClipboardSetText failed for context:', err);
+    if (props.platform === 'darwin') {
+      await WailsClipboardSetText(props.generatedContext);
+    } else {
+      await navigator.clipboard.writeText(props.generatedContext);
     }
-    copyButtonText.value = 'Failed!';
-    setTimeout(() => {
-      copyButtonText.value = 'Copy All';
-    }, 2000);
+    copyButtonText.value = 'Copied!';
+    resetContextCopyLabel();
+    return;
+  } catch (err) {
+    console.error('Failed to copy context preview: ', err);
   }
+
+  try {
+    if (props.platform === 'darwin') {
+      await navigator.clipboard.writeText(props.generatedContext);
+    } else {
+      await WailsClipboardSetText(props.generatedContext);
+    }
+    copyButtonText.value = 'Copied!';
+  } catch (fallbackErr) {
+    console.error('Fallback clipboard copy also failed for context:', fallbackErr);
+    copyButtonText.value = 'Failed!';
+  } finally {
+    resetContextCopyLabel();
+  }
+}
+
+function resetContextCopyLabel() {
+  setTimeout(() => {
+    copyButtonText.value = 'Copy All';
+  }, 2000);
 }
 
 function openRepoScanEditor() {

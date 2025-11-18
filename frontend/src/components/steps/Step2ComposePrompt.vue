@@ -63,23 +63,20 @@
           ></textarea>
         </div>
 
-        <div>
-          <label for="file-list-context" class="block text-sm font-medium text-gray-700 mb-1">Files to include:</label>
-          <textarea
-            id="file-list-context"
-            :value="props.fileListContext"
-            rows="20"
-            readonly
-            class="w-full p-2 border border-gray-300 rounded-md shadow-sm bg-gray-100 font-mono text-xs"
-            placeholder="File list from Step 1 (Prepare Context) will appear here..."
-            style="min-height: 150px;"
-          ></textarea>
-        </div>
+        <LargeTextViewer
+          label="Files to include:"
+          :content="props.fileListContext"
+          placeholder="File list from Step 1 (Prepare Context) will appear here..."
+          :platform="props.platform"
+          min-height="200px"
+          :max-display-length="10000"
+          copy-button-label="Copy All"
+        />
       </div>
 
       <!-- Right Column: Final Prompt -->
       <div class="w-1/2 flex flex-col overflow-y-auto p-2 border border-gray-200 rounded-md bg-white">
-        <div class="flex justify-between items-center mb-2">
+        <div class="flex items-center justify-between mb-2 space-x-3">
           <div class="flex items-center space-x-2">
             <h3 class="text-md font-medium text-gray-700">Prompt:</h3>
             <select
@@ -93,10 +90,10 @@
               </option>
             </select>
           </div>
-          <div class="flex items-center space-x-3">
+          <div class="flex items-center space-x-3 text-xs">
             <span
               v-show="!isLoadingFinalPrompt"
-              :class="['text-xs font-medium', charCountColorClass]"
+              :class="['font-medium', charCountColorClass]"
               :title="tooltipText"
             >
               ~{{ approximateTokens }} tokens
@@ -104,7 +101,7 @@
             <button
               @click="copyFinalPromptToClipboard"
               :disabled="!props.finalPrompt || isLoadingFinalPrompt"
-              class="px-3 py-1 bg-blue-500 text-white text-xs font-semibold rounded-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 disabled:bg-gray-300"
+              class="px-3 py-1 bg-blue-500 text-white font-semibold rounded-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 disabled:bg-gray-300"
             >
               {{ copyButtonText }}
             </button>
@@ -116,18 +113,22 @@
           <p class="text-gray-500 ml-2">Updating prompt...</p>
         </div>
 
-        <textarea
-          v-else
-          :value="props.finalPrompt"
-          @input="e => emit('update:finalPrompt', e.target.value)"
-          rows="20"
-          class="w-full p-2 border border-gray-300 rounded-md shadow-sm font-mono text-xs flex-grow"
-          placeholder="The final prompt will be generated here..."
-          style="min-height: 300px;"
-        ></textarea>
-         <p class="text-xs text-gray-500 mt-1">
-            The prompt updates automatically. Manual changes to this field may be overwritten when source data (task, rules, file list) is updated.
-        </p>
+        <div v-else class="flex flex-col flex-grow">
+          <LargeTextViewer
+            class="flex-grow"
+            :content="props.finalPrompt"
+            label="Generated prompt preview"
+            placeholder="The final prompt will be generated here..."
+            :platform="props.platform"
+            min-height="300px"
+            max-height="1000px"
+            :max-display-length="15000"
+            :show-copy-button="false"
+          />
+          <p class="text-xs text-gray-500 mt-1">
+            Preview is truncated for performance. Use Copy All to grab the full text.
+          </p>
+        </div>
       </div>
     </div>
 
@@ -169,6 +170,7 @@ import { ClipboardSetText as WailsClipboardSetText } from '../../../wailsjs/runt
 import { GetCustomPromptRules, SetCustomPromptRules, ExecuteLLMPrompt } from '../../../wailsjs/go/main/App';
 import { LogInfo as LogInfoRuntime, LogError as LogErrorRuntime } from '../../../wailsjs/runtime/runtime';
 import CustomRulesModal from '../CustomRulesModal.vue';
+import LargeTextViewer from '../common/LargeTextViewer.vue';
 
 import devTemplateContentFromFile from '../../../../design/prompts/prompt_makeDiffGitFormat.md?raw';
 import architectTemplateContentFromFile from '../../../../design/prompts/prompt_makePlan.md?raw';
@@ -261,6 +263,10 @@ const tooltipText = computed(() => {
   const count = charCount.value;
   const tokens = Math.round(count / 3);
   return `Your text contains ${count} symbols which is roughly equivalent to ${tokens} tokens`;
+});
+
+const finalPromptSizeLabel = computed(() => {
+  return formatBytes(charCount.value);
 });
 
 const hasExecutePrerequisites = computed(() => {
@@ -366,21 +372,37 @@ watch(selectedPromptTemplateKey, () => {
 async function copyFinalPromptToClipboard() {
   if (!props.finalPrompt) return;
   try {
-    await navigator.clipboard.writeText(props.finalPrompt);
+    if (props.platform === 'darwin') {
+      await WailsClipboardSetText(props.finalPrompt);
+    } else {
+      await navigator.clipboard.writeText(props.finalPrompt);
+    }
     copyButtonText.value = 'Copied!';
-    setTimeout(() => {
-      copyButtonText.value = 'Copy All';
-    }, 2000);
+    resetCopyButtonLabel();
+    return;
   } catch (err) {
     console.error('Failed to copy final prompt: ', err);
-    if (props.platform === 'darwin' && err) {
-      console.error('darvin ClipboardSetText failed for final prompt:', err);
-    }
-    copyButtonText.value = 'Failed!';
-    setTimeout(() => {
-      copyButtonText.value = 'Copy All';
-    }, 2000);
   }
+
+  try {
+    if (props.platform === 'darwin') {
+      await navigator.clipboard.writeText(props.finalPrompt);
+    } else {
+      await WailsClipboardSetText(props.finalPrompt);
+    }
+    copyButtonText.value = 'Copied!';
+  } catch (fallbackErr) {
+    console.error('Fallback copy attempt for final prompt also failed: ', fallbackErr);
+    copyButtonText.value = 'Failed!';
+  } finally {
+    resetCopyButtonLabel();
+  }
+}
+
+function resetCopyButtonLabel() {
+  setTimeout(() => {
+    copyButtonText.value = 'Copy All';
+  }, 2000);
 }
 
 async function openPromptRulesModal() {
@@ -461,6 +483,19 @@ async function copyResponse() {
             copyResponseButtonText.value = 'Copy Response';
         }, 2000);
     }
+}
+
+function formatBytes(length) {
+  if (!length) {
+    return '0 B';
+  }
+  if (length >= 1024 * 1024) {
+    return `${(length / (1024 * 1024)).toFixed(1)} MB`;
+  }
+  if (length >= 1024) {
+    return `${(length / 1024).toFixed(1)} KB`;
+  }
+  return `${length} B`;
 }
 
 
