@@ -53,6 +53,19 @@ html {
   animation: auto-context-spin 20s linear infinite;
 }
 
+.auto-context-button--in-progress {
+  color: #ffffff;
+  border-width: 0;
+  border-color: transparent;
+  background-image: var(--auto-context-button-bg);
+  background-size: 2000px 100%;
+  background-repeat: repeat-x;
+  background-position: 0 center;
+  animation: auto-context-spin 1s linear infinite;
+  cursor: wait;
+  opacity: 1;
+}
+
 @keyframes auto-context-spin {
   from { background-position-x: 0px; }
   to { background-position-x: -2000px; }

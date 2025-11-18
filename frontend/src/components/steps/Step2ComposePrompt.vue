@@ -15,8 +15,8 @@
         <div class="flex items-center space-x-2">
             <button
                 class="auto-context-button"
-                :class="isExecuteEnabled ? 'auto-context-button--enabled' : 'auto-context-button--disabled'"
-                :disabled="!isExecuteEnabled"
+                :class="executeButtonClass"
+                :disabled="!hasExecutePrerequisites"
                 @click="handleExecutePrompt"
                 title="Execute prompt with configured LLM"
             >
@@ -205,13 +205,14 @@ const props = defineProps({
 const emit = defineEmits(['update:finalPrompt', 'update:userTask', 'update:rulesContent', 'open-llm-settings']);
 
 const promptTemplates = {
+  architect: { name: 'Architect', content: architectTemplateContentFromFile },
+  findBug: { name: 'Test', content: findBugTemplateContentFromFile },
   dev: { name: 'Dev', content: devTemplateContentFromFile },
   architect: { name: 'Architect', content: architectTemplateContentFromFile },
-  findBug: { name: 'Find Bug', content: findBugTemplateContentFromFile },
   projectManager: { name: 'Project: Update Tasks', content: projectManagerTemplateContentFromFile },
 };
 
-const selectedPromptTemplateKey = ref('dev'); // Default template
+const selectedPromptTemplateKey = ref('architect'); // Default template
 
 const isLoadingFinalPrompt = ref(false);
 const copyButtonText = ref('Copy All');
@@ -262,8 +263,24 @@ const tooltipText = computed(() => {
   return `Your text contains ${count} symbols which is roughly equivalent to ${tokens} tokens`;
 });
 
-const isExecuteEnabled = computed(() => {
-    return props.hasActiveLlmKey && localUserTask.value && localUserTask.value.trim().length > 0 && !isExecuting.value;
+const hasExecutePrerequisites = computed(() => {
+  if (!props.hasActiveLlmKey) {
+    return false;
+  }
+  if (!localUserTask.value) {
+    return false;
+  }
+  return localUserTask.value.trim().length > 0;
+});
+
+const executeButtonClass = computed(() => {
+  if (!hasExecutePrerequisites.value) {
+    return 'auto-context-button--disabled';
+  }
+  if (isExecuting.value) {
+    return 'auto-context-button--in-progress';
+  }
+  return 'auto-context-button--enabled';
 });
 
 const DEFAULT_RULES = `no additional rules`;
@@ -395,7 +412,12 @@ function handleCancelPromptRules() {
 }
 
 async function handleExecutePrompt() {
-    if (!isExecuteEnabled.value) return;
+    if (!hasExecutePrerequisites.value) {
+        return;
+    }
+    if (isExecuting.value) {
+        return;
+    }
     
     isExecuting.value = true;
     LogInfoRuntime('Executing LLM prompt...');

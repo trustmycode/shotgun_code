@@ -46,10 +46,10 @@
             <div class="flex items-center space-x-2">
               <button
                 class="auto-context-button"
-                :class="isAutoContextEnabled ? 'auto-context-button--enabled' : 'auto-context-button--disabled'"
-                :disabled="!isAutoContextEnabled"
+                :class="autoContextButtonClass"
+                :disabled="!hasAutoContextPrerequisites"
                 data-testid="auto-context-btn"
-                @click="emit('auto-context')"
+                @click="handleAutoContextClick"
               >
                 <span>
                   {{ props.isAutoContextLoading ? 'Auto selecting…' : 'Auto context' }}
@@ -185,14 +185,24 @@ const repoScanTokensLabel = computed(() => {
   return `${repoScanTokenCount.value} tokens`;
 });
 
-const isAutoContextEnabled = computed(() => {
-  if (!props.hasActiveLlmKey || props.isAutoContextLoading) {
+const hasAutoContextPrerequisites = computed(() => {
+  if (!props.hasActiveLlmKey) {
     return false;
   }
   if (!localUserTask.value) {
     return false;
   }
   return localUserTask.value.trim().length > 0;
+});
+
+const autoContextButtonClass = computed(() => {
+  if (!hasAutoContextPrerequisites.value) {
+    return 'auto-context-button--disabled';
+  }
+  if (props.isAutoContextLoading) {
+    return 'auto-context-button--in-progress';
+  }
+  return 'auto-context-button--enabled';
 });
 
 watch(() => props.userTask, (newValue) => {
@@ -273,6 +283,16 @@ async function copyGeneratedContextToClipboard() {
 
 function openRepoScanEditor() {
   isRepoScanModalVisible.value = true;
+}
+
+function handleAutoContextClick() {
+  if (!hasAutoContextPrerequisites.value) {
+    return;
+  }
+  if (props.isAutoContextLoading) {
+    return;
+  }
+  emit('auto-context');
 }
 
 async function handleSaveRepoScan(content) {

@@ -11,8 +11,8 @@
             placeholder="Paste your repo scan here..."
           ></textarea>
           <p class="text-xs text-gray-500 mt-1 text-left">
-            Repo scan is attached to your context extraction prompt to better understand the repository structure and extract the right context. 
-            Create it on <a href="#" @click.prevent="openLink" class="text-blue-600 hover:underline">shotgunpro.dev</a>
+            Repo scan is attached to your context extraction prompt to better understand the repository structure and extract the right context. Any text format is supported here. Markdown, JSON, CSV, etc.
+            You may create it on <a href="#" @click.prevent="openLink" class="text-blue-600 hover:underline">shotgunpro.dev</a>
           </p>
         </div>
         <div class="items-center px-4 py-3">

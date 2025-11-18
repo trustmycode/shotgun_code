@@ -18,12 +18,18 @@ var openAIModelCatalog = []ModelInfo{
 }
 
 var openRouterModelCatalog = []ModelInfo{
-	{Name: "openrouter/auto", Description: "Router automatically selects the best model"},
-	{Name: "openrouter/gpt-5", Description: "GPT-5 family routed via OpenRouter"},
-	{Name: "anthropic/claude-3.5-sonnet", Description: "Claude 3.5 Sonnet via OpenRouter"},
-	{Name: "google/gemini-pro-1.5", Description: "Gemini Pro 1.5 proxied through OpenRouter"},
+	{Name: "openai/gpt-5", Description: "GPT-5 family routed via OpenRouter"},
+	{Name: "anthropic/claude-4.5-sonnet", Description: "Claude 4.5 Sonnet via OpenRouter"},
+	{Name: "google/gemini-2.5-pro", Description: "Gemini 2.5 Pro via OpenRouter"},
+	{Name: "google/gemini-2.5-flash", Description: "Gemini 2.5 Flash via OpenRouter"},
+	{Name: "google/gemini-2.0-flash", Description: "Gemini 2.0 Flash via OpenRouter"},
 	{Name: "openai/gpt-4o-mini", Description: "GPT-4o mini from OpenRouter catalog"},
 	{Name: "meta-llama/llama-3.1-70b-instruct", Description: "Llama 3.1 70B Instruct via OpenRouter"},
+	{Name: "x-ai/grok-code-fast-1", Description: "Grok Code Fast 1 via OpenRouter"},
+	{Name: "x-ai/grok-4-fast", Description: "Grok 4 Fast via OpenRouter"},
+	{Name: "openrouter/sherlock-think-alpha", Description: "Sherlock Think Alpha via OpenRouter"},
+	{Name: "minimax/minimax-m2", Description: "Minimax M2 via OpenRouter"},
+	{Name: "z-ai/glm-4.6", Description: "GLM 4.6 via OpenRouter"},
 }
 
 var geminiModelCatalog = []ModelInfo{

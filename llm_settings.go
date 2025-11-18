@@ -35,7 +35,7 @@ func defaultModelForProvider(providerName string) string {
 	case LLMProviderGemini:
 		return "gemini-2.5-pro"
 	case LLMProviderOpenRouter:
-		return "openrouter/gpt-5"
+		return "openai/gpt-5"
 	default:
 		return ""
 	}
