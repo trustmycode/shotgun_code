@@ -3,7 +3,7 @@ package provider
 import "strings"
 
 // isGPT5FamilyModel reports whether the given model name belongs to the GPT-5 family.
-// It matches plain names like "gpt-5.1" as well as vendor-prefixed names like "openrouter/gpt-5".
+// It matches plain names like "gpt-5.1" as well as vendor-prefixed names like "openai/gpt-5".
 func isGPT5FamilyModel(model string) bool {
 	m := strings.ToLower(strings.TrimSpace(model))
 	if m == "" {

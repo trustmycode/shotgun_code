@@ -27,7 +27,6 @@ var openRouterModelCatalog = []ModelInfo{
 	{Name: "meta-llama/llama-3.1-70b-instruct", Description: "Llama 3.1 70B Instruct via OpenRouter"},
 	{Name: "x-ai/grok-code-fast-1", Description: "Grok Code Fast 1 via OpenRouter"},
 	{Name: "x-ai/grok-4-fast", Description: "Grok 4 Fast via OpenRouter"},
-	{Name: "openrouter/sherlock-think-alpha", Description: "Sherlock Think Alpha via OpenRouter"},
 	{Name: "minimax/minimax-m2", Description: "Minimax M2 via OpenRouter"},
 	{Name: "z-ai/glm-4.6", Description: "GLM 4.6 via OpenRouter"},
 }

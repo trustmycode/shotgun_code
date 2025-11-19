@@ -140,7 +140,7 @@ const providerOptions = [
 
 const providerDefaultModels = {
   openai: 'gpt-5',
-  openrouter: 'openrouter/gpt-5',
+  openrouter: 'openai/gpt-5',
   gemini: 'gemini-2.5-pro',
 };
 
