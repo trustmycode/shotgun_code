@@ -76,14 +76,14 @@
 
       <!-- Right Column: Final Prompt -->
       <div class="w-1/2 flex flex-col overflow-y-auto p-2 border border-gray-200 rounded-md bg-white relative">
-        <div class="flex flex-wrap items-center gap-3 mb-2 min-h-[28px]">
-          <div class="flex items-center space-x-2">
-            <h3 class="text-md font-medium text-gray-700">Prompt:</h3>
+        <div class="flex items-center justify-between gap-2 mb-2 flex-shrink-0">
+          <div class="flex items-center gap-2 min-w-0">
+            <h3 class="text-md font-medium text-gray-700 whitespace-nowrap">Prompt:</h3>
             <!-- Small Loading Indicator next to title instead of destroying content -->
-            <div v-if="isLoadingFinalPrompt" class="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-500"></div>
+            <div v-if="isLoadingFinalPrompt" class="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-500 flex-shrink-0"></div>
             <select
               v-model="selectedPromptTemplateKey"
-              class="ml-2 p-1 border border-gray-300 rounded-md text-xs focus:ring-blue-500 focus:border-blue-500"
+              class="p-1 border border-gray-300 rounded-md text-xs focus:ring-blue-500 focus:border-blue-500 flex-shrink-0"
               title="Select prompt template"
             >
               <option v-for="(template, key) in promptTemplates" :key="key" :value="key">
@@ -91,17 +91,10 @@
               </option>
             </select>
           </div>
-          <span
-            v-show="!isLoadingFinalPrompt"
-            :class="['text-xs font-medium', charCountColorClass]"
-            :title="tooltipText"
-          >
-            ~{{ approximateTokens }} tokens
-          </span>
           <button
             @click="copyFinalPromptToClipboard"
             :disabled="!props.finalPrompt || isLoadingFinalPrompt"
-            class="px-3 py-1 bg-blue-500 text-white text-xs font-semibold rounded-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 disabled:bg-gray-300"
+            class="px-3 py-1 bg-blue-500 text-white text-xs font-semibold rounded-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 disabled:bg-gray-300 whitespace-nowrap flex-shrink-0"
           >
             {{ copyButtonText }}
           </button>
@@ -240,35 +233,6 @@ const isFirstMount = ref(true);
 
 const localUserTask = ref(props.userTask);
 
-// Character count and related computed properties
-const charCount = computed(() => {
-  return (props.finalPrompt || '').length;
-});
-
-const approximateTokens = computed(() => {
-  const tokens = Math.round(charCount.value / 3);
-  return tokens.toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ");
-});
-
-const charCountColorClass = computed(() => {
-  const count = charCount.value;
-  if (count < 1000000) {
-    return 'text-green-600';
-  } else if (count <= 4000000) {
-    return 'text-yellow-500'; // Using 500 for better visibility on white bg
-  } else {
-    return 'text-red-600';
-  }
-});
-
-const tooltipText = computed(() => {
-  if (isLoadingFinalPrompt.value) return 'Calculating...';
-  
-  const count = charCount.value;
-  const tokens = Math.round(count / 3);
-  return `Your text contains ${count} symbols which is roughly equivalent to ${tokens} tokens`;
-});
-
 const hasExecutePrerequisites = computed(() => {
   if (!props.hasActiveLlmKey) {
     return false;
@@ -379,12 +343,10 @@ watch(selectedPromptTemplateKey, () => {
 
 async function copyFinalPromptToClipboard() {
   if (!props.finalPrompt) return;
+
+  // Use navigator.clipboard.writeText as primary (WailsClipboardSetText has UTF-8 encoding issues with box-drawing chars on darwin)
   try {
-    if (props.platform === 'darwin') {
-      await WailsClipboardSetText(props.finalPrompt);
-    } else {
-      await navigator.clipboard.writeText(props.finalPrompt);
-    }
+    await navigator.clipboard.writeText(props.finalPrompt);
     copyButtonText.value = 'Copied!';
     resetCopyButtonLabel();
     return;
@@ -392,12 +354,9 @@ async function copyFinalPromptToClipboard() {
     console.error('Failed to copy final prompt: ', err);
   }
 
+  // Fallback to Wails clipboard API
   try {
-    if (props.platform === 'darwin') {
-      await navigator.clipboard.writeText(props.finalPrompt);
-    } else {
-      await WailsClipboardSetText(props.finalPrompt);
-    }
+    await WailsClipboardSetText(props.finalPrompt);
     copyButtonText.value = 'Copied!';
   } catch (fallbackErr) {
     console.error('Fallback copy attempt for final prompt also failed: ', fallbackErr);

@@ -1,8 +1,8 @@
 <template>
   <div class="flex flex-col w-full">
-    <div v-if="showHeader && (label || totalSizeLabel)" class="flex items-center justify-between mb-1">
+    <div v-if="showHeader && (label || tokensLabel)" class="flex items-center justify-between mb-1">
       <label v-if="label" class="block text-sm font-medium text-gray-700">{{ label }}</label>
-      <span class="text-xs text-gray-500" v-if="totalSizeLabel">{{ totalSizeLabel }}</span>
+      <span :class="['text-xs font-medium', tokenCountColorClass]" v-if="tokensLabel">~{{ tokensLabel }} tokens</span>
     </div>
 
     <div
@@ -20,10 +20,10 @@
     <div v-if="showFooter && hasContent" class="flex items-center justify-between mt-2">
       <p class="text-xs" :class="isTruncated ? 'text-amber-600' : 'text-gray-500'">
         <template v-if="isTruncated">
-          Showing preview of {{ previewSizeLabel }} ({{ displayedCharactersLabel }}) out of {{ totalSizeLabel }} ({{ totalCharactersLabel }})
+          Showing ~{{ previewTokensLabel }} tokens ({{ displayedCharactersLabel }}) out of ~{{ tokensLabel }} tokens ({{ totalCharactersLabel }})
         </template>
         <template v-else>
-          Total size: {{ totalSizeLabel }} ({{ totalCharactersLabel }})
+          ~{{ tokensLabel }} tokens ({{ totalCharactersLabel }})
         </template>
       </p>
       <button
@@ -103,30 +103,35 @@ const hasContent = computed(() => totalCharacters.value > 0);
 const isTruncated = computed(() => totalCharacters.value > props.maxDisplayLength);
 const displayContent = computed(() => (props.content || '').slice(0, props.maxDisplayLength));
 
-const totalSizeLabel = computed(() => formatBytes(totalCharacters.value));
-const previewSizeLabel = computed(() => formatBytes(displayedCharacters.value));
+const approximateTokens = computed(() => Math.round(totalCharacters.value / 3));
+const tokensLabel = computed(() => {
+  return approximateTokens.value.toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+});
+
+const tokenCountColorClass = computed(() => {
+  const count = totalCharacters.value;
+  if (count < 1000000) {
+    return 'text-green-600';
+  } else if (count <= 4000000) {
+    return 'text-yellow-500';
+  }
+  return 'text-red-600';
+});
+
+const previewTokensLabel = computed(() => {
+  const tokens = Math.round(displayedCharacters.value / 3);
+  return tokens.toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+});
 const displayedCharactersLabel = computed(() => `${displayedCharacters.value.toLocaleString()} chars`);
 const totalCharactersLabel = computed(() => `${totalCharacters.value.toLocaleString()} chars`);
-
-function formatBytes(length) {
-  if (!length) {
-    return '0 B';
-  }
-  if (length >= 1024 * 1024) {
-    return `${(length / (1024 * 1024)).toFixed(1)} MB`;
-  }
-  if (length >= 1024) {
-    return `${(length / 1024).toFixed(1)} KB`;
-  }
-  return `${length} B`;
-}
 
 async function copyFullContent() {
   if (!props.content) return;
 
+  // Use navigator.clipboard.writeText as primary on darwin (WailsClipboardSetText has UTF-8 encoding issues with box-drawing chars)
   try {
     if (props.platform === 'darwin') {
-      await WailsClipboardSetText(props.content);
+      await navigator.clipboard.writeText(props.content);
     } else {
       await navigator.clipboard.writeText(props.content);
     }
@@ -138,13 +143,9 @@ async function copyFullContent() {
     console.error('Failed to copy content preview:', err);
   }
 
-  // Fallback to whichever option we have not tried yet
+  // Fallback to Wails clipboard API
   try {
-    if (props.platform === 'darwin') {
-      await navigator.clipboard.writeText(props.content);
-    } else {
-      await WailsClipboardSetText(props.content);
-    }
+    await WailsClipboardSetText(props.content);
     copyButtonText.value = 'Copied!';
     emit('copied');
   } catch (err) {

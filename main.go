@@ -13,6 +13,7 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
 	"github.com/wailsapp/wails/v2/pkg/options/linux"
+	"github.com/wailsapp/wails/v2/pkg/options/mac"
 	// Alias for Wails runtime package
 )
 
@@ -68,6 +69,21 @@ func main() {
 
 		Linux: &linux.Options{
 			Icon: iconPNG,
+		},
+		Mac: &mac.Options{
+			About: &mac.AboutInfo{
+				Title:   "Shotgun Code",
+				Message: "AI-powered code assistant",
+				Icon:    iconPNG,
+			},
+			TitleBar: &mac.TitleBar{
+				TitlebarAppearsTransparent: false,
+				HideTitle:                  false,
+				HideTitleBar:               false,
+				FullSizeContent:            false,
+				UseToolbar:                 false,
+				HideToolbarSeparator:       true,
+			},
 		},
 	})
 
