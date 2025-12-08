@@ -36,7 +36,7 @@
 
     <div class="flex-grow flex flex-row space-x-4 overflow-hidden">
       <!-- Left Column: Task, Rules, Files -->
-      <div class="w-1/2 flex flex-col space-y-3 overflow-y-auto p-2 border border-gray-200 rounded-md bg-gray-50">
+      <div :class="[leftColumnClass, 'flex flex-col space-y-3 overflow-y-auto p-2 border border-gray-200 rounded-md bg-gray-50']">
         <div>
           <label for="user-task-ai" class="block text-sm font-medium text-gray-700 mb-1">Your task for AI:</label>
           <textarea
@@ -46,6 +46,37 @@
             class="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 text-sm"
             placeholder="Describe what the AI should do..."
           ></textarea>
+          <div class="mt-2 flex flex-wrap items-center gap-3">
+            <div class="flex items-center space-x-2">
+              <label class="text-sm font-medium text-gray-700">Prompt role:</label>
+              <select
+                v-model="selectedPromptTemplateKey"
+                class="p-1 border border-gray-300 rounded-md text-xs focus:ring-blue-500 focus:border-blue-500"
+                title="Select prompt template"
+              >
+                <option v-for="(template, key) in promptTemplates" :key="key" :value="key">
+                  {{ template.name }}
+                </option>
+              </select>
+            </div>
+            <div class="flex items-center space-x-2 text-xs text-gray-600" :title="tooltipText">
+              <span :class="['font-medium', charCountColorClass]">~{{ approximateTokens }} tokens</span>
+            </div>
+            <button
+              @click="copyFinalPromptToClipboard"
+              :disabled="!props.finalPrompt || isLoadingFinalPrompt"
+              class="px-3 py-1 bg-blue-500 text-white text-xs font-semibold rounded-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 disabled:bg-gray-300"
+            >
+              {{ copyButtonText }}
+            </button>
+            <button
+              type="button"
+              @click="toggleFinalPromptVisibility"
+              class="px-3 py-1 bg-gray-200 text-gray-700 text-xs font-semibold rounded-md hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-opacity-50"
+            >
+              {{ isFinalPromptCollapsed ? 'Show' : 'Hide' }}
+            </button>
+          </div>
         </div>
 
         <div>
@@ -75,21 +106,15 @@
       </div>
 
       <!-- Right Column: Final Prompt -->
-      <div class="w-1/2 flex flex-col overflow-y-auto p-2 border border-gray-200 rounded-md bg-white relative">
+      <div
+        v-if="!isFinalPromptCollapsed"
+        class="w-1/2 flex flex-col overflow-hidden p-2 border border-gray-200 rounded-md bg-white relative"
+      >
         <div class="flex flex-wrap items-center gap-3 mb-2 min-h-[28px]">
           <div class="flex items-center space-x-2">
-            <h3 class="text-md font-medium text-gray-700">Prompt:</h3>
+            <h3 class="text-md font-medium text-gray-700">Final Prompt</h3>
             <!-- Small Loading Indicator next to title instead of destroying content -->
             <div v-if="isLoadingFinalPrompt" class="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-500"></div>
-            <select
-              v-model="selectedPromptTemplateKey"
-              class="ml-2 p-1 border border-gray-300 rounded-md text-xs focus:ring-blue-500 focus:border-blue-500"
-              title="Select prompt template"
-            >
-              <option v-for="(template, key) in promptTemplates" :key="key" :value="key">
-                {{ template.name }}
-              </option>
-            </select>
           </div>
           <span
             v-show="!isLoadingFinalPrompt"
@@ -98,13 +123,6 @@
           >
             ~{{ approximateTokens }} tokens
           </span>
-          <button
-            @click="copyFinalPromptToClipboard"
-            :disabled="!props.finalPrompt || isLoadingFinalPrompt"
-            class="px-3 py-1 bg-blue-500 text-white text-xs font-semibold rounded-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 disabled:bg-gray-300"
-          >
-            {{ copyButtonText }}
-          </button>
         </div>
         <!-- 
            MODIFIED: 
@@ -112,9 +130,9 @@
            2. Added transition classes to LargeTextViewer container.
            3. Added overlay class for loading state.
         -->
-        <div class="flex flex-col flex-grow relative">
-          <div 
-            class="flex-grow transition-opacity duration-200 ease-in-out"
+        <div class="flex flex-col flex-grow relative min-h-0">
+          <div
+            class="flex-grow transition-opacity duration-200 ease-in-out min-h-0"
             :class="{ 'opacity-50 grayscale': isLoadingFinalPrompt }"
           >
             <LargeTextViewer
@@ -123,15 +141,15 @@
               label="Generated prompt preview"
               placeholder="The final prompt will be generated here..."
               :platform="props.platform"
-              min-height="300px"
-              max-height="1000px"
+              min-height="0px"
+              max-height="100%"
               :max-display-length="15000"
               :show-copy-button="false"
             />
+            <p class="text-xs text-gray-500 mt-1">
+              Preview is truncated for performance. Use Copy All to grab the full text.
+            </p>
           </div>
-          <p class="text-xs text-gray-500 mt-1">
-            Preview is truncated for performance. Use Copy All to grab the full text.
-          </p>
         </div>
       </div>
     </div>
@@ -237,6 +255,8 @@ const isExecuting = ref(false);
 const copyResponseButtonText = ref('Copy Response');
 
 const isFirstMount = ref(true);
+const isFinalPromptCollapsed = ref(false);
+const leftColumnClass = computed(() => (isFinalPromptCollapsed.value ? 'w-full' : 'w-1/2'));
 
 const localUserTask = ref(props.userTask);
 
@@ -380,10 +400,11 @@ watch(selectedPromptTemplateKey, () => {
 async function copyFinalPromptToClipboard() {
   if (!props.finalPrompt) return;
   try {
-    if (props.platform === 'darwin') {
-      await WailsClipboardSetText(props.finalPrompt);
-    } else {
+    // Use browser clipboard first to preserve Unicode as-is; fallback to Wails if unavailable.
+    if (navigator?.clipboard?.writeText) {
       await navigator.clipboard.writeText(props.finalPrompt);
+    } else {
+      await WailsClipboardSetText(props.finalPrompt);
     }
     copyButtonText.value = 'Copied!';
     resetCopyButtonLabel();
@@ -393,10 +414,11 @@ async function copyFinalPromptToClipboard() {
   }
 
   try {
-    if (props.platform === 'darwin') {
-      await navigator.clipboard.writeText(props.finalPrompt);
-    } else {
+    // Fallback: try the alternate clipboard API
+    if (navigator?.clipboard?.writeText) {
       await WailsClipboardSetText(props.finalPrompt);
+    } else {
+      await navigator.clipboard.writeText(props.finalPrompt);
     }
     copyButtonText.value = 'Copied!';
   } catch (fallbackErr) {
@@ -491,6 +513,10 @@ async function copyResponse() {
             copyResponseButtonText.value = 'Copy Response';
         }, 2000);
     }
+}
+
+function toggleFinalPromptVisibility() {
+  isFinalPromptCollapsed.value = !isFinalPromptCollapsed.value;
 }
 
 defineExpose({});
