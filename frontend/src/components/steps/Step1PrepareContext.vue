@@ -76,8 +76,8 @@
             v-if="!isLoadingContext && generatedContext && !generatedContext.startsWith('Error:')"
             class="flex items-center space-x-3 text-xs"
           >
-            <span class="text-gray-500">
-              {{ generatedContextSizeLabel }}
+            <span :class="['font-medium', generatedContextTokensColorClass]">
+              ~{{ generatedContextTokensLabel }} tokens
             </span>
             <button
               @click="copyGeneratedContextToClipboard"
@@ -245,8 +245,19 @@ const generatedContextCharCount = computed(() => {
   return props.generatedContext.length;
 });
 
-const generatedContextSizeLabel = computed(() => {
-  return formatBytes(generatedContextCharCount.value);
+const generatedContextTokensLabel = computed(() => {
+  const tokens = Math.round(generatedContextCharCount.value / 3);
+  return tokens.toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+});
+
+const generatedContextTokensColorClass = computed(() => {
+  const count = generatedContextCharCount.value;
+  if (count < 1000000) {
+    return 'text-green-600';
+  } else if (count <= 4000000) {
+    return 'text-yellow-500';
+  }
+  return 'text-red-600';
 });
 
 const hasAutoContextPrerequisites = computed(() => {
@@ -331,30 +342,14 @@ function updateTokenCount(text) {
   repoScanTokenCount.value = Math.ceil(text.length / 4);
 }
 
-function formatBytes(length) {
-  if (!length) {
-    return '0 B';
-  }
-  if (length >= 1024 * 1024) {
-    return `${(length / (1024 * 1024)).toFixed(1)} MB`;
-  }
-  if (length >= 1024) {
-    return `${(length / 1024).toFixed(1)} KB`;
-  }
-  return `${length} B`;
-}
-
 async function copyGeneratedContextToClipboard() {
   if (!props.generatedContext) {
     return;
   }
 
+  // Use navigator.clipboard.writeText as primary (WailsClipboardSetText has UTF-8 encoding issues with box-drawing chars on darwin)
   try {
-    if (props.platform === 'darwin') {
-      await WailsClipboardSetText(props.generatedContext);
-    } else {
-      await navigator.clipboard.writeText(props.generatedContext);
-    }
+    await navigator.clipboard.writeText(props.generatedContext);
     copyButtonText.value = 'Copied!';
     resetContextCopyLabel();
     return;
@@ -362,12 +357,9 @@ async function copyGeneratedContextToClipboard() {
     console.error('Failed to copy context preview: ', err);
   }
 
+  // Fallback to Wails clipboard API
   try {
-    if (props.platform === 'darwin') {
-      await navigator.clipboard.writeText(props.generatedContext);
-    } else {
-      await WailsClipboardSetText(props.generatedContext);
-    }
+    await WailsClipboardSetText(props.generatedContext);
     copyButtonText.value = 'Copied!';
   } catch (fallbackErr) {
     console.error('Fallback clipboard copy also failed for context:', fallbackErr);
