@@ -416,9 +416,11 @@ async function copyFinalPromptToClipboard() {
   try {
     // Fallback: try the alternate clipboard API
     if (navigator?.clipboard?.writeText) {
+      // First attempt used navigator.clipboard, so try Wails
       await WailsClipboardSetText(props.finalPrompt);
     } else {
-      await navigator.clipboard.writeText(props.finalPrompt);
+      // First attempt used Wails, and navigator.clipboard doesn't exist, so no alternative available
+      throw new Error('No alternative clipboard API available');
     }
     copyButtonText.value = 'Copied!';
   } catch (fallbackErr) {
