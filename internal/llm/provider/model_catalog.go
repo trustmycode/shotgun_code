@@ -36,6 +36,16 @@ var geminiModelCatalog = []ModelInfo{
 	{Name: "gemini-2.5-flash", Description: "Flash"},
 }
 
+var ollamaModelCatalog = []ModelInfo{
+	{Name: "llama3.2", Description: "Default local Ollama model"},
+	{Name: "qwen2.5-coder", Description: "Code-oriented local model via Ollama"},
+}
+
+var lmStudioModelCatalog = []ModelInfo{
+	{Name: "local-model", Description: "Model loaded in LM Studio local server"},
+	{Name: "openai/gpt-oss-20b", Description: "Example OpenAI-compatible local model name"},
+}
+
 func cloneModelCatalog(models []ModelInfo) []ModelInfo {
 	if len(models) == 0 {
 		return nil
@@ -54,6 +64,10 @@ func ModelCatalog(providerName string) ([]ModelInfo, error) {
 		return cloneModelCatalog(openRouterModelCatalog), nil
 	case "gemini":
 		return cloneModelCatalog(geminiModelCatalog), nil
+	case "ollama":
+		return cloneModelCatalog(ollamaModelCatalog), nil
+	case "lmstudio":
+		return cloneModelCatalog(lmStudioModelCatalog), nil
 	default:
 		return nil, fmt.Errorf("provider %s is not supported", providerName)
 	}

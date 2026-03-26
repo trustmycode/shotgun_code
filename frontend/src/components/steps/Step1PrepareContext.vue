@@ -43,14 +43,14 @@
                 @click="handleAutoContextClick"
               >
                 <span>
-                  {{ props.isAutoContextLoading ? 'Auto selecting…' : 'Auto context' }}
+                  {{ isAutoContextLoading ? 'Auto selecting…' : 'Auto context' }}
                 </span>
               </button>
               <button
                 class="text-xs text-blue-600 hover:underline"
                 type="button"
                 data-testid="setup-api-key-link"
-                @click="emit('open-llm-settings')"
+                @click="openLlmSettings"
               >
                 Setup model
               </button>
@@ -128,8 +128,9 @@
             v-else-if="generatedContext"
             class="flex-grow h-full"
             :content="generatedContext"
+            :enable-token-estimation="false"
             label=""
-            :platform="props.platform"
+            :platform="platform"
             placeholder="Context will appear here."
             copy-button-label="Copy All"
             min-height="100%"
@@ -171,65 +172,52 @@
 </template>
 
 <script setup>
-import { defineProps, ref, computed, defineEmits, watch } from 'vue';
+import { ref, computed, defineEmits, watch, onBeforeUnmount } from 'vue';
+import { storeToRefs } from 'pinia';
 import { ClipboardSetText as WailsClipboardSetText } from '../../../wailsjs/runtime/runtime';
 import { SaveRepoScan, LoadRepoScan } from '../../../wailsjs/go/main/App';
 import RepoScanModal from '../RepoScanModal.vue';
 import LargeTextViewer from '../common/LargeTextViewer.vue';
+import { useProjectStore } from '../../stores/projectStore';
+import { useContextStore } from '../../stores/contextStore';
+import { useLLMStore } from '../../stores/llmStore';
+import { useTokenEstimator } from '../../composables/useTokenEstimator';
 
-const props = defineProps({
-  generatedContext: {
-    type: String,
-    default: ''
-  },
-  projectRoot: {
-    type: String,
-    default: ''
-  },
-  isLoadingContext: {
-    type: Boolean,
-    default: false
-  },
-  generationProgress: {
-    type: Object,
-    default: () => ({ current: 0, total: 0 })
-  },
-  platform: {
-    type: String,
-    default: 'unknown'
-  },
-  hasActiveLlmKey: {
-    type: Boolean,
-    default: false
-  },
-  isAutoContextLoading: {
-    type: Boolean,
-    default: false
-  },
-  userTask: {
-    type: String,
-    default: ''
-  }
-});
+const emit = defineEmits(['auto-context']);
 
-const emit = defineEmits(['auto-context', 'open-llm-settings', 'update:userTask']);
+const projectStore = useProjectStore();
+const contextStore = useContextStore();
+const llmStore = useLLMStore();
+const { estimateTokensForText } = useTokenEstimator();
+
+const { projectRoot, platform } = storeToRefs(projectStore);
+const {
+  shotgunPromptContext: generatedContext,
+  isGeneratingContext: isLoadingContext,
+  generationProgressData: generationProgress,
+  userTask,
+  isAutoContextLoading,
+} = storeToRefs(contextStore);
+const { hasActiveLlmKey, isLlmSettingsModalVisible } = storeToRefs(llmStore);
 
 const progressBarWidth = computed(() => {
-  if (props.generationProgress && props.generationProgress.total > 0) {
-    const percentage = (props.generationProgress.current / props.generationProgress.total) * 100;
+  if (generationProgress.value && generationProgress.value.total > 0) {
+    const percentage = (generationProgress.value.current / generationProgress.value.total) * 100;
     return `${Math.min(100, Math.max(0, percentage))}%`;
   }
   return '0%';
 });
 
 const copyButtonText = ref('Copy All');
-const localUserTask = ref(props.userTask);
+const localUserTask = ref(userTask.value);
 let userTaskInputDebounceTimer = null;
 
 const includeRepoScan = ref(false);
 const repoScanTokenCount = ref(0);
 const repoScanContent = ref('');
 const isRepoScanModalVisible = ref(false);
+const generatedContextTokenCount = ref(0);
+let generatedTokenDebounceTimer = null;
 
 const repoScanTokensLabel = computed(() => {
   if (repoScanTokenCount.value === 0) {
@@ -239,14 +227,14 @@ const repoScanTokensLabel = computed(() => {
 });
 
 const generatedContextCharCount = computed(() => {
-  if (!props.generatedContext) {
+  if (!generatedContext.value) {
     return 0;
   }
-  return props.generatedContext.length;
+  return generatedContext.value.length;
 });
 
 const generatedContextTokensLabel = computed(() => {
-  const tokens = Math.round(generatedContextCharCount.value / 3);
+  const tokens = generatedContextTokenCount.value > 0 ? generatedContextTokenCount.value : Math.round(generatedContextCharCount.value / 3);
   return tokens.toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ");
 });
 
@@ -261,7 +249,7 @@ const generatedContextTokensColorClass = computed(() => {
 });
 
 const hasAutoContextPrerequisites = computed(() => {
-  if (!props.hasActiveLlmKey) {
+  if (!hasActiveLlmKey.value) {
     return false;
   }
   if (!localUserTask.value) {
@@ -274,14 +262,14 @@ const autoContextButtonClass = computed(() => {
   if (!hasAutoContextPrerequisites.value) {
     return 'auto-context-button--disabled';
   }
-  if (props.isAutoContextLoading) {
+  if (isAutoContextLoading.value) {
     return 'auto-context-button--in-progress';
   }
   return 'auto-context-button--enabled';
 });
 
 watch(
-  () => props.userTask,
+  userTask,
   (newValue) => {
     if (newValue !== localUserTask.value) {
       localUserTask.value = newValue;
@@ -294,15 +282,28 @@ watch(localUserTask, (currentValue) => {
     clearTimeout(userTaskInputDebounceTimer);
   }
   userTaskInputDebounceTimer = setTimeout(() => {
-    if (currentValue !== props.userTask) {
-      emit('update:userTask', currentValue);
+    if (currentValue !== userTask.value) {
+      userTask.value = currentValue;
     }
   }, 300);
 });
 
+watch(
+  generatedContext,
+  () => {
+    if (generatedTokenDebounceTimer) {
+      clearTimeout(generatedTokenDebounceTimer);
+    }
+    generatedTokenDebounceTimer = setTimeout(() => {
+      updateGeneratedContextTokenCount();
+    }, 300);
+  },
+  { immediate: true }
+);
+
 // Watch for project root changes to load repo scan
 watch(
-  () => props.projectRoot,
+  projectRoot,
   async (newRoot) => {
     if (!newRoot) {
       repoScanContent.value = '';
@@ -333,23 +334,52 @@ watch(
   { immediate: true }
 );
 
-function updateTokenCount(text) {
-  // Simple estimation: length / 4
+onBeforeUnmount(() => {
+  if (userTaskInputDebounceTimer) {
+    clearTimeout(userTaskInputDebounceTimer);
+  }
+  if (generatedTokenDebounceTimer) {
+    clearTimeout(generatedTokenDebounceTimer);
+  }
+});
+
+async function updateTokenCount(text) {
   if (!text) {
     repoScanTokenCount.value = 0;
     return;
   }
-  repoScanTokenCount.value = Math.ceil(text.length / 4);
+  try {
+    const estimate = await estimateTokensForText(text);
+    repoScanTokenCount.value = Number(estimate?.tokens || 0);
+  } catch {
+    repoScanTokenCount.value = Math.ceil(text.length / 4);
+  }
+}
+
+async function updateGeneratedContextTokenCount() {
+  const text = generatedContext.value || '';
+  if (!text) {
+    generatedContextTokenCount.value = 0;
+    return;
+  }
+
+  try {
+    const estimate = await estimateTokensForText(text);
+    const tokens = Number(estimate?.tokens || 0);
+    generatedContextTokenCount.value = tokens;
+  } catch {
+    generatedContextTokenCount.value = Math.round(text.length / 3);
+  }
 }
 
 async function copyGeneratedContextToClipboard() {
-  if (!props.generatedContext) {
+  if (!generatedContext.value) {
     return;
   }
 
   // Use navigator.clipboard.writeText as primary (WailsClipboardSetText has UTF-8 encoding issues with box-drawing chars on darwin)
   try {
-    await navigator.clipboard.writeText(props.generatedContext);
+    await navigator.clipboard.writeText(generatedContext.value);
     copyButtonText.value = 'Copied!';
     resetContextCopyLabel();
     return;
@@ -359,7 +389,7 @@ async function copyGeneratedContextToClipboard() {
 
   // Fallback to Wails clipboard API
   try {
-    await WailsClipboardSetText(props.generatedContext);
+    await WailsClipboardSetText(generatedContext.value);
     copyButtonText.value = 'Copied!';
   } catch (fallbackErr) {
     console.error('Fallback clipboard copy also failed for context:', fallbackErr);
@@ -383,10 +413,14 @@ function handleAutoContextClick() {
   if (!hasAutoContextPrerequisites.value) {
     return;
   }
-  if (props.isAutoContextLoading) {
+  if (isAutoContextLoading.value) {
     return;
   }
   emit('auto-context');
+}
+
+function openLlmSettings() {
+  isLlmSettingsModalVisible.value = true;
 }
 
 async function handleSaveRepoScan(content) {
@@ -394,9 +428,9 @@ async function handleSaveRepoScan(content) {
   updateTokenCount(content);
   isRepoScanModalVisible.value = false;
 
-  if (content && props.projectRoot) {
+  if (content && projectRoot.value) {
     try {
-      await SaveRepoScan(props.projectRoot, content);
+      await SaveRepoScan(projectRoot.value, content);
       includeRepoScan.value = true;
     } catch (err) {
       console.error('Failed to save repo scan:', err);
@@ -404,9 +438,9 @@ async function handleSaveRepoScan(content) {
     return;
   }
 
-  if (!content && props.projectRoot) {
+  if (!content && projectRoot.value) {
     try {
-      await SaveRepoScan(props.projectRoot, '');
+      await SaveRepoScan(projectRoot.value, '');
       includeRepoScan.value = false;
     } catch (err) {
       console.error('Failed to clear repo scan:', err);
@@ -414,5 +448,3 @@ async function handleSaveRepoScan(content) {
   }
 }
 </script>
-
-

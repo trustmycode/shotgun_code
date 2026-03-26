@@ -6,10 +6,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
 	"time"
-
-	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 type PromptHistoryItem struct {
@@ -32,6 +31,31 @@ type HistoryManager struct {
 	mu          sync.Mutex
 }
 
+func mergeHistoryItems(first, second []PromptHistoryItem) []PromptHistoryItem {
+	combined := make([]PromptHistoryItem, 0, len(first)+len(second))
+	combined = append(combined, first...)
+	combined = append(combined, second...)
+
+	seen := make(map[string]bool, len(combined))
+	merged := make([]PromptHistoryItem, 0, len(combined))
+	for _, item := range combined {
+		id := item.ID
+		if id == "" {
+			id = fmt.Sprintf("%d|%s|%s", item.Timestamp.UnixNano(), item.UserTask, item.ConstructedPrompt)
+		}
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
+		merged = append(merged, item)
+	}
+
+	sort.SliceStable(merged, func(i, j int) bool {
+		return merged[i].Timestamp.After(merged[j].Timestamp)
+	})
+	return merged
+}
+
 func NewHistoryManager(app *App) *HistoryManager {
 	return &HistoryManager{
 		app:     app,
@@ -43,7 +67,6 @@ func (hm *HistoryManager) getHistoryFilePath() (string, error) {
 	if hm.historyPath != "" {
 		return hm.historyPath, nil
 	}
-	// Use the same directory as settings.json
 	if hm.app.configPath != "" {
 		dir := filepath.Dir(hm.app.configPath)
 		hm.historyPath = filepath.Join(dir, "prompt_history.json")
@@ -60,45 +83,70 @@ func (hm *HistoryManager) LoadHistory() error {
 	if err != nil {
 		return err
 	}
+	lockPath := path + ".lock"
 
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			// No history yet, start empty
-			hm.history = PromptHistory{Items: []PromptHistoryItem{}}
-			return nil
+	return withFileLock(lockPath, true, func() error {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			if os.IsNotExist(err) {
+				hm.history = PromptHistory{Items: []PromptHistoryItem{}}
+				return nil
+			}
+			return err
 		}
-		return err
-	}
 
-	err = json.Unmarshal(data, &hm.history)
-	if err != nil {
-		wailsRuntime.LogErrorf(hm.app.ctx, "Error unmarshalling history: %v", err)
-		return err
-	}
-	return nil
+		err = json.Unmarshal(data, &hm.history)
+		if err != nil {
+			safeLogErrorf(hm.app.ctx, "Error unmarshalling history: %v", err)
+			return err
+		}
+		return nil
+	})
 }
 
 func (hm *HistoryManager) SaveHistory() error {
 	hm.mu.Lock()
 	defer hm.mu.Unlock()
+	return hm.saveHistoryLocked(true)
+}
 
+func (hm *HistoryManager) saveHistoryLocked(mergeWithOnDisk bool) error {
 	path, err := hm.getHistoryFilePath()
 	if err != nil {
 		return err
 	}
 
-	data, err := json.MarshalIndent(hm.history, "", "  ")
-	if err != nil {
+	if err := ensureParentDir(path); err != nil {
 		return err
 	}
+	lockPath := path + ".lock"
 
-	return os.WriteFile(path, data, 0644)
+	return withFileLock(lockPath, false, func() error {
+		if mergeWithOnDisk {
+			var onDisk PromptHistory
+			existingData, err := os.ReadFile(path)
+			if err == nil {
+				if unmarshalErr := json.Unmarshal(existingData, &onDisk); unmarshalErr != nil {
+					safeLogWarningf(hm.app.ctx, "Failed to parse existing history, overwriting with in-memory history: %v", unmarshalErr)
+				}
+			} else if !os.IsNotExist(err) {
+				return err
+			}
+
+			hm.history.Items = mergeHistoryItems(hm.history.Items, onDisk.Items)
+		}
+
+		data, err := json.MarshalIndent(hm.history, "", "  ")
+		if err != nil {
+			return err
+		}
+
+		return os.WriteFile(path, data, 0o644)
+	})
 }
 
 func (hm *HistoryManager) AddItem(userTask, constructedPrompt, response, apiCall string) PromptHistoryItem {
 	hm.mu.Lock()
-	// Generate simple ID based on timestamp
 	now := time.Now()
 	item := PromptHistoryItem{
 		ID:                fmt.Sprintf("%d", now.UnixNano()),
@@ -108,14 +156,12 @@ func (hm *HistoryManager) AddItem(userTask, constructedPrompt, response, apiCall
 		Response:          response,
 		APICall:           apiCall,
 	}
-	// Prepend to keep newest first
 	hm.history.Items = append([]PromptHistoryItem{item}, hm.history.Items...)
 	hm.mu.Unlock()
 
-	// Save asynchronously to avoid blocking UI too much
 	go func() {
 		if err := hm.SaveHistory(); err != nil {
-			wailsRuntime.LogError(hm.app.ctx, "Failed to save history: "+err.Error())
+			safeLogError(hm.app.ctx, "Failed to save history: "+err.Error())
 		}
 	}()
 
@@ -125,7 +171,6 @@ func (hm *HistoryManager) AddItem(userTask, constructedPrompt, response, apiCall
 func (hm *HistoryManager) GetItems() []PromptHistoryItem {
 	hm.mu.Lock()
 	defer hm.mu.Unlock()
-	// Return a copy to avoid race conditions if modified elsewhere
 	items := make([]PromptHistoryItem, len(hm.history.Items))
 	copy(items, hm.history.Items)
 	return items
@@ -133,43 +178,16 @@ func (hm *HistoryManager) GetItems() []PromptHistoryItem {
 
 func (hm *HistoryManager) Clear() error {
 	hm.mu.Lock()
+	defer hm.mu.Unlock()
 	hm.history.Items = []PromptHistoryItem{}
-	hm.mu.Unlock()
-	return hm.SaveHistory()
+	return hm.saveHistoryLocked(false)
 }
 
-// --- App Methods Binding ---
-
 func (a *App) ExecuteLLMPrompt(userTask, finalPrompt string) (PromptHistoryItem, error) {
-	if !a.HasActiveLlmKey() {
-		return PromptHistoryItem{}, errors.New("no active LLM configuration found")
+	if a.llmService == nil {
+		a.llmService = NewLLMService(a)
 	}
-
-	cfg := buildProviderConfig(a.settings.LLMSettings)
-	providerInstance, err := a.getOrCreateProvider(cfg)
-	if err != nil {
-		return PromptHistoryItem{}, fmt.Errorf("failed to create provider: %w", err)
-	}
-
-	wailsRuntime.LogInfof(a.ctx, "Executing LLM prompt via %s (%s)...", cfg.Provider, cfg.Model)
-
-	// Use provider.Generate. Note: we don't have streaming here yet, so it waits for full response.
-	response, apiCall, err := providerInstance.Generate(a.ctx, finalPrompt)
-
-	var historyItem PromptHistoryItem
-	if a.historyManager != nil {
-		historyResponse := response
-		if err != nil {
-			historyResponse = fmt.Sprintf("ERROR during prompt execution: %v", err)
-		}
-		historyItem = a.historyManager.AddItem(userTask, finalPrompt, historyResponse, apiCall)
-	}
-
-	if err != nil {
-		return PromptHistoryItem{}, fmt.Errorf("LLM generation failed: %w", err)
-	}
-
-	return historyItem, nil
+	return a.llmService.ExecutePromptSync(userTask, finalPrompt)
 }
 
 func (a *App) GetPromptHistory() []PromptHistoryItem {

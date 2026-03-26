@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"strings"
 
@@ -88,6 +87,17 @@ func (o *openAIProvider) Generate(ctx context.Context, prompt string) (string, s
 		return "", debug, err
 	}
 	return output, debug, nil
+}
+
+func (o *openAIProvider) GenerateStream(ctx context.Context, prompt string, onChunk func(chunk string)) (string, string, error) {
+	output, apiCall, err := o.Generate(ctx, prompt)
+	if err != nil {
+		return "", apiCall, err
+	}
+	if onChunk != nil && output != "" {
+		onChunk(output)
+	}
+	return output, apiCall, nil
 }
 
 type responsesAPIReasoningConfig struct {
@@ -183,20 +193,17 @@ func (o *openAIProvider) generateViaResponsesAPI(ctx context.Context, prompt str
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		log.Printf("openai responses API request failed: %v", err)
 		return "", debugString, fmt.Errorf("openai responses API request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		limitedBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		log.Printf("openai responses API returned status %d: %s", resp.StatusCode, string(limitedBody))
+		_, _ = io.ReadAll(io.LimitReader(resp.Body, 4096))
 		return "", debugString, fmt.Errorf("openai responses API returned non-2xx status %d", resp.StatusCode)
 	}
 
 	var decoded responsesAPIResponse
 	if err := json.NewDecoder(resp.Body).Decode(&decoded); err != nil {
-		log.Printf("failed to decode openai responses API payload: %v", err)
 		return "", debugString, fmt.Errorf("failed to decode openai responses API payload: %w", err)
 	}
 
@@ -208,7 +215,6 @@ func (o *openAIProvider) generateViaResponsesAPI(ctx context.Context, prompt str
 	// 2) Если его нет — извлекаем текст из массива output.
 	text, extractErr := extractTextFromResponsesOutput(decoded.Output)
 	if extractErr != nil {
-		log.Printf("failed to extract text from openai responses API output for model %s: %v", o.model, extractErr)
 		return "", debugString, extractErr
 	}
 

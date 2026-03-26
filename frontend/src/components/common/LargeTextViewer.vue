@@ -39,8 +39,9 @@
 </template>
 
 <script setup>
-import { computed, ref, watch } from 'vue';
+import { computed, ref, watch, onBeforeUnmount } from 'vue';
 import { ClipboardSetText as WailsClipboardSetText } from '../../../wailsjs/runtime/runtime';
+import { useTokenEstimator } from '../../composables/useTokenEstimator';
 
 const props = defineProps({
   content: {
@@ -86,12 +87,19 @@ const props = defineProps({
   showFooter: {
     type: Boolean,
     default: true
+  },
+  enableTokenEstimation: {
+    type: Boolean,
+    default: true,
   }
 });
 
 const emit = defineEmits(['copied']);
+const { estimateTokensForText } = useTokenEstimator();
 
 const copyButtonText = ref(props.copyButtonLabel);
+const estimatedTokens = ref(0);
+let estimateDebounceTimer = null;
 
 watch(() => props.copyButtonLabel, (newValue) => {
   copyButtonText.value = newValue;
@@ -103,7 +111,10 @@ const hasContent = computed(() => totalCharacters.value > 0);
 const isTruncated = computed(() => totalCharacters.value > props.maxDisplayLength);
 const displayContent = computed(() => (props.content || '').slice(0, props.maxDisplayLength));
 
-const approximateTokens = computed(() => Math.round(totalCharacters.value / 3));
+const approximateTokens = computed(() => {
+  if (estimatedTokens.value > 0) return estimatedTokens.value;
+  return Math.round(totalCharacters.value / 3);
+});
 const tokensLabel = computed(() => {
   return approximateTokens.value.toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ");
 });
@@ -119,11 +130,49 @@ const tokenCountColorClass = computed(() => {
 });
 
 const previewTokensLabel = computed(() => {
-  const tokens = Math.round(displayedCharacters.value / 3);
+  const ratio = totalCharacters.value > 0 ? displayedCharacters.value / totalCharacters.value : 0;
+  const tokens = Math.round(approximateTokens.value * ratio);
   return tokens.toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ");
 });
 const displayedCharactersLabel = computed(() => `${displayedCharacters.value.toLocaleString()} chars`);
 const totalCharactersLabel = computed(() => `${totalCharacters.value.toLocaleString()} chars`);
+
+watch(
+  () => [props.content, props.enableTokenEstimation, props.showHeader, props.showFooter],
+  () => {
+    const shouldEstimate = props.enableTokenEstimation && (props.showHeader || props.showFooter);
+    if (!shouldEstimate) {
+      estimatedTokens.value = 0;
+      return;
+    }
+    if (estimateDebounceTimer) clearTimeout(estimateDebounceTimer);
+    estimateDebounceTimer = setTimeout(() => {
+      estimateContentTokens();
+    }, 300);
+  },
+  { immediate: true }
+);
+
+onBeforeUnmount(() => {
+  if (estimateDebounceTimer) {
+    clearTimeout(estimateDebounceTimer);
+  }
+});
+
+async function estimateContentTokens() {
+  const text = props.content || '';
+  if (!text) {
+    estimatedTokens.value = 0;
+    return;
+  }
+  try {
+    const estimate = await estimateTokensForText(text);
+    const tokens = Number(estimate?.tokens || 0);
+    estimatedTokens.value = tokens;
+  } catch {
+    estimatedTokens.value = Math.round(text.length / 3);
+  }
+}
 
 async function copyFullContent() {
   if (!props.content) return;

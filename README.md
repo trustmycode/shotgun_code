@@ -40,6 +40,8 @@ It has evolved from a simple "context dumper" into a full-fledged **LLM Client f
 *   **OpenAI:** Support for GPT-4o and experimental support for **GPT-5** family models.
 *   **Google Gemini:** Native integration for Gemini 2.5/3 Pro & Flash.
 *   **OpenRouter:** Access hundreds of LLM's via a unified API.
+*   **Ollama (Local):** Local OpenAI-compatible endpoint support (`http://localhost:11434/v1` by default).
+*   **LM Studio (Local):** Local OpenAI-compatible endpoint support (`http://localhost:1234/v1` by default).
 
 ### 🛠 Developer Experience
 *   **Prompt Templates:** Switch modes easily (e.g., "Find Bug" vs "Refactor" vs "Write Docs").
@@ -61,6 +63,7 @@ Shotgun guides you through a 3-step process:
 ### Step 2: Compose & Execute
 *   **Define Task:** Describe what you need (e.g., "Refactor the auth middleware to use JWT").
 *   **Select Template:** Choose a persona (Dev, Architect, QA).
+*   **Live Updates:** If files change in your repo while you are on Step 2, Shotgun updates context in the background and shows an "Updating context..." indicator.
 *   **Execute:** Click **"Execute Prompt"** to send it to the configured LLM API immediately, OR copy the full payload to your clipboard for use in external tools like ChatGPT or Cursor.
 
 ### Step 3: History & Apply
@@ -101,12 +104,36 @@ wails build
 
 ### LLM Setup
 Click the **Settings** (gear icon) in the app to configure providers:
-1.  **Provider:** Select OpenAI, Gemini, or OpenRouter.
-2.  **API Key:** Paste your key (stored locally).
+1.  **Provider:** Select OpenAI, Gemini, OpenRouter, Ollama, or LM Studio.
+2.  **API Key:** Paste your key (stored locally). For Ollama/LM Studio, key is optional.
 3.  **Model:** Select your preferred model (e.g., `gpt-4o`, `gemini-2.5-pro`, `claude-3.5-sonnet`).
+
+### Streaming Events & Token Estimation
+The backend now exposes prompt streaming and token estimation APIs:
+
+* `ExecuteLLMPromptStream(userTask, finalPrompt) -> requestId`
+* `CancelLLMPromptStream(requestId)`
+* `EstimateTokens(providerName, model, text)`
+
+Stream lifecycle events emitted to frontend:
+
+* `llmPromptStreamStart`
+* `llmPromptStreamChunk`
+* `llmPromptStreamEnd`
+* `llmPromptStreamError`
+
+Feature flag:
+
+* `LLM_STREAM_ENABLED=true` (default). Set to `false`/`0` to disable streaming and use synchronous fallback.
 
 ### Custom Rules
 You can define global excludes (like `node_modules`, `dist`, `.git`) and custom prompt instructions that are appended to every request.
+
+### Multiple App Instances
+Shotgun is safe to run in multiple independent OS processes (for different repositories). Settings and prompt history writes use cross-process file locks.
+
+*   **Windows/Linux:** Launch Shotgun again (second process).
+*   **macOS:** `open -n -a "Shotgun Code"` to force a new app instance.
 
 ---
 
@@ -128,6 +155,12 @@ package main
 ```
 
 This format allows models to understand file boundaries perfectly, enabling accurate multi-file refactoring suggestions.
+
+For binary/non-text files, Shotgun keeps the file entry but replaces content with:
+
+```text
+[Binary file content omitted]
+```
 
 ---
 

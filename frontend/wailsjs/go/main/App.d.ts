@@ -4,9 +4,15 @@ import {main} from '../models';
 import {provider} from '../models';
 import {context} from '../models';
 
+export function CancelLLMPromptStream(arg1:string):Promise<void>;
+
 export function ClearPromptHistory():Promise<void>;
 
+export function EstimateTokens(arg1:string,arg2:string,arg3:string):Promise<main.TokenEstimate>;
+
 export function ExecuteLLMPrompt(arg1:string,arg2:string):Promise<main.PromptHistoryItem>;
+
+export function ExecuteLLMPromptStream(arg1:string,arg2:string):Promise<string>;
 
 export function GetAutoContextButtonTexture():Promise<string>;
 

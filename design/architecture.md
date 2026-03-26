@@ -225,3 +225,18 @@ The project context (`shotgunPromptContext`) is generated asynchronously to impr
     -   Subsequently, if "Use custom rules" is active, the project context (output of Step 1) is also regenerated.
     -   Changes to prompt rules affect `finalPrompt` in Step 2.
 -   **`ignore.glob` in the project directory**: The `ignore.glob` file that may exist in the user‑selected project directory is **no longer used** for the "Use custom rules" feature. This feature now relies solely on application‑level configuration. The project's `.gitignore` file continues to be used for the "Use .gitignore rules" feature.
+## Streaming Prompt Execution (2026-02)
+
+New backend API methods:
+- `ExecuteLLMPromptStream(userTask, finalPrompt) (string, error)`
+- `CancelLLMPromptStream(requestId string) error`
+- `EstimateTokens(providerName, model, text string) (TokenEstimate, error)`
+
+New Wails events for streaming lifecycle:
+- `llmPromptStreamStart`
+- `llmPromptStreamChunk`
+- `llmPromptStreamEnd`
+- `llmPromptStreamError`
+
+Environment toggle:
+- `LLM_STREAM_ENABLED=true` by default; set to `false`/`0` to disable stream execution.

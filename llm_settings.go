@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/wailsapp/wails/v2/pkg/runtime"
-
 	"shotgun_code/internal/llm/provider"
 )
 
@@ -23,6 +21,10 @@ func normalizeProviderName(name string) string {
 		return LLMProviderOpenRouter
 	case LLMProviderGemini:
 		return LLMProviderGemini
+	case LLMProviderOllama:
+		return LLMProviderOllama
+	case LLMProviderLMStudio:
+		return LLMProviderLMStudio
 	default:
 		return ""
 	}
@@ -36,6 +38,10 @@ func defaultModelForProvider(providerName string) string {
 		return "gemini-2.5-pro"
 	case LLMProviderOpenRouter:
 		return "openai/gpt-5"
+	case LLMProviderOllama:
+		return "llama3.2"
+	case LLMProviderLMStudio:
+		return "local-model"
 	default:
 		return ""
 	}
@@ -49,8 +55,21 @@ func (l LLMSettings) keyForProvider(providerName string) string {
 		return strings.TrimSpace(l.OpenRouterKey)
 	case LLMProviderGemini:
 		return strings.TrimSpace(l.GeminiKey)
+	case LLMProviderOllama:
+		return strings.TrimSpace(l.OllamaKey)
+	case LLMProviderLMStudio:
+		return strings.TrimSpace(l.LMStudioKey)
 	default:
 		return ""
+	}
+}
+
+func providerRequiresAPIKey(providerName string) bool {
+	switch providerName {
+	case LLMProviderOpenAI, LLMProviderOpenRouter, LLMProviderGemini:
+		return true
+	default:
+		return false
 	}
 }
 
@@ -62,9 +81,13 @@ func (a *App) ensureLLMSettingsDefaults() {
 	settings.OpenAIKey = strings.TrimSpace(settings.OpenAIKey)
 	settings.OpenRouterKey = strings.TrimSpace(settings.OpenRouterKey)
 	settings.GeminiKey = strings.TrimSpace(settings.GeminiKey)
+	settings.OllamaKey = strings.TrimSpace(settings.OllamaKey)
+	settings.LMStudioKey = strings.TrimSpace(settings.LMStudioKey)
 
-	if settings.ActiveProvider != "" && settings.keyForProvider(settings.ActiveProvider) == "" {
-		runtime.LogWarning(a.ctx, "Active LLM provider is missing an API key; disabling auto-context.")
+	if settings.ActiveProvider != "" &&
+		providerRequiresAPIKey(settings.ActiveProvider) &&
+		settings.keyForProvider(settings.ActiveProvider) == "" {
+		safeLogWarning(a.ctx, "Active LLM provider is missing an API key; disabling auto-context.")
 		settings.ActiveProvider = ""
 		settings.Model = ""
 	}
@@ -75,7 +98,13 @@ func (a *App) ensureLLMSettingsDefaults() {
 
 func (a *App) HasActiveLlmKey() bool {
 	settings := a.settings.LLMSettings
-	return settings.ActiveProvider != "" && settings.keyForProvider(settings.ActiveProvider) != ""
+	if settings.ActiveProvider == "" {
+		return false
+	}
+	if providerRequiresAPIKey(settings.ActiveProvider) {
+		return settings.keyForProvider(settings.ActiveProvider) != ""
+	}
+	return true
 }
 
 func (a *App) GetLlmSettings() LLMSettings {
@@ -95,6 +124,10 @@ func (a *App) SetLlmApiKey(providerName, apiKey string) error {
 		a.settings.LLMSettings.OpenRouterKey = apiKey
 	case LLMProviderGemini:
 		a.settings.LLMSettings.GeminiKey = apiKey
+	case LLMProviderOllama:
+		a.settings.LLMSettings.OllamaKey = apiKey
+	case LLMProviderLMStudio:
+		a.settings.LLMSettings.LMStudioKey = apiKey
 	}
 	if a.settings.LLMSettings.ActiveProvider == providerName && strings.TrimSpace(a.settings.LLMSettings.Model) == "" {
 		a.settings.LLMSettings.Model = defaultModelForProvider(providerName)
@@ -115,7 +148,7 @@ func (a *App) SetLlmProvider(providerName string) error {
 		a.invalidateProviderCache()
 		return a.saveSettings()
 	}
-	if a.settings.LLMSettings.keyForProvider(providerName) == "" {
+	if providerRequiresAPIKey(providerName) && a.settings.LLMSettings.keyForProvider(providerName) == "" {
 		return fmt.Errorf("set API key for %s before activating it", providerName)
 	}
 	a.settings.LLMSettings.ActiveProvider = providerName
@@ -135,7 +168,7 @@ func (a *App) SetLlmModel(providerName, model string) error {
 	if providerName == "" {
 		return errors.New("unknown provider")
 	}
-	if a.settings.LLMSettings.keyForProvider(providerName) == "" {
+	if providerRequiresAPIKey(providerName) && a.settings.LLMSettings.keyForProvider(providerName) == "" {
 		return fmt.Errorf("set API key for %s before selecting a model", providerName)
 	}
 	if strings.TrimSpace(model) == "" {
@@ -174,7 +207,10 @@ func (a *App) invalidateProviderCache() {
 }
 
 func (a *App) getOrCreateProvider(cfg provider.Config) (provider.LLMProvider, error) {
-	if cfg.Provider == "" || cfg.APIKey == "" || cfg.Model == "" {
+	if cfg.Provider == "" || cfg.Model == "" {
+		return nil, errors.New("incomplete provider configuration")
+	}
+	if providerRequiresAPIKey(cfg.Provider) && cfg.APIKey == "" {
 		return nil, errors.New("incomplete provider configuration")
 	}
 	if a.llmCache.instance != nil && a.llmCache.cfg == cfg {

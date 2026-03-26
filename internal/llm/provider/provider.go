@@ -29,6 +29,9 @@ type LLMProvider interface {
 	// - a sanitized debug representation of the API call (no API keys, no raw prompt; placeholders instead),
 	// - and an error if the call failed.
 	Generate(ctx context.Context, prompt string) (string, string, error)
+	// GenerateStream executes the prompt in streaming mode and calls onChunk for each text chunk.
+	// It returns the final accumulated output and sanitized API-call debug payload.
+	GenerateStream(ctx context.Context, prompt string, onChunk func(chunk string)) (string, string, error)
 }
 
 // Factory builds provider implementations based on the given configuration.
@@ -42,6 +45,10 @@ func Factory(cfg Config) (LLMProvider, error) {
 		return newOpenRouterProvider(cfg)
 	case "gemini":
 		return newGeminiProvider(cfg)
+	case "ollama":
+		return newOllamaProvider(cfg)
+	case "lmstudio":
+		return newLMStudioProvider(cfg)
 	default:
 		return nil, fmt.Errorf("provider %s is not supported", cfg.Provider)
 	}

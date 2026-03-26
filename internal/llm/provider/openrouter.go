@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"strings"
 
@@ -85,6 +84,17 @@ func (o *openRouterProvider) Generate(ctx context.Context, prompt string) (strin
 	return output, debug, nil
 }
 
+func (o *openRouterProvider) GenerateStream(ctx context.Context, prompt string, onChunk func(chunk string)) (string, string, error) {
+	output, apiCall, err := o.Generate(ctx, prompt)
+	if err != nil {
+		return "", apiCall, err
+	}
+	if onChunk != nil && output != "" {
+		onChunk(output)
+	}
+	return output, apiCall, nil
+}
+
 type openRouterChatMessage struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
@@ -107,8 +117,8 @@ type openRouterTextConfig struct {
 }
 
 type openRouterChatRequest struct {
-	Model     string                   `json:"model"`
-	Messages  []openRouterChatMessage  `json:"messages"`
+	Model     string                    `json:"model"`
+	Messages  []openRouterChatMessage   `json:"messages"`
 	Reasoning openRouterReasoningConfig `json:"reasoning"`
 	Text      openRouterTextConfig      `json:"text"`
 }
@@ -188,31 +198,26 @@ func (o *openRouterProvider) generateViaOpenRouterAPI(ctx context.Context, promp
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		log.Printf("openrouter chat request failed (model=%s): %v", o.model, err)
 		return "", debugString, fmt.Errorf("openrouter chat request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		limitedBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		log.Printf("openrouter chat returned status %d for model %s: %s", resp.StatusCode, o.model, string(limitedBody))
+		_, _ = io.ReadAll(io.LimitReader(resp.Body, 4096))
 		return "", debugString, fmt.Errorf("openrouter chat API returned non-2xx status %d", resp.StatusCode)
 	}
 
 	var decoded openRouterChatResponse
 	if err := json.NewDecoder(resp.Body).Decode(&decoded); err != nil {
-		log.Printf("failed to decode openrouter chat payload for model %s: %v", o.model, err)
 		return "", debugString, fmt.Errorf("failed to decode openrouter chat payload: %w", err)
 	}
 
 	if len(decoded.Choices) == 0 {
-		log.Printf("openrouter chat response did not contain any choices for model %s", o.model)
 		return "", debugString, errors.New("openrouter chat response did not contain any choices")
 	}
 
 	text := strings.TrimSpace(decoded.Choices[0].Message.Content)
 	if text == "" {
-		log.Printf("openrouter chat response contained empty message content for model %s", o.model)
 		return "", debugString, errors.New("openrouter chat response did not contain text output")
 	}
 

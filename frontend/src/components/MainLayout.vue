@@ -18,24 +18,11 @@
         @toggle-exclude="toggleExcludeNode"
         @custom-rules-updated="handleCustomRulesUpdated"
         @add-log="({message, type}) => addLog(message, type)" />
-      <CentralPanel :current-step="currentStep" 
-                    :shotgun-prompt-context="shotgunPromptContext"
-                    :generation-progress="generationProgressData"
-                    :is-generating-context="isGeneratingContext"
-                    :project-root="projectRoot" 
-                    :platform="platform"
-                    :user-task="userTask"
-                    :rules-content="rulesContent"
-                    :final-prompt="finalPrompt"
-                    :has-active-llm-key="hasActiveLlmKey"
-                    :is-auto-context-loading="isAutoContextLoading"
-                    @auto-context="requestAutoContextSelection"
-                    @open-llm-settings="openLlmSettingsModal"
-                    @step-action="handleStepAction"
-                    @update-composed-prompt="handleComposedPromptUpdate"
-                    @update:user-task="handleUserTaskUpdate"
-                    @update:rules-content="handleRulesContentUpdate"
-                    ref="centralPanelRef" />
+      <CentralPanel
+        :current-step="currentStep"
+        @auto-context="requestAutoContextSelection"
+        ref="centralPanelRef"
+      />
     </div>
     <div 
       @mousedown="startResize"
@@ -55,11 +42,17 @@
 
 <script setup>
 import { ref, reactive, watch, onMounted, onBeforeUnmount, nextTick } from 'vue';
+import { storeToRefs } from 'pinia';
 import HorizontalStepper from './HorizontalStepper.vue';
 import LeftSidebar from './LeftSidebar.vue';
 import CentralPanel from './CentralPanel.vue';
 import BottomConsole from './BottomConsole.vue';
 import LlmSettingsModal from './LlmSettingsModal.vue';
+import { useProjectStore } from '../stores/projectStore';
+import { useContextStore } from '../stores/contextStore';
+import { useLLMStore } from '../stores/llmStore';
+import { useLogStore } from '../stores/logStore';
+import { useFileTreeUtils } from '../composables/useFileTreeUtils';
 import {
   ListFiles,
   RequestAutoContextSelection,
@@ -82,21 +75,53 @@ const steps = ref([
   { id: 3, title: 'Prompt History', completed: false, description: 'Review previously executed prompts and responses.', alwaysAccessible: true },
 ]);
 
-const logMessages = ref([]);
+const projectStore = useProjectStore();
+const contextStore = useContextStore();
+const llmStore = useLLMStore();
+const logStore = useLogStore();
+
+const {
+  projectRoot,
+  fileTree,
+  loadingError,
+  useGitignore,
+  useCustomIgnore,
+  isFileTreeLoading,
+  projectFilesChangedPendingReload,
+  platform,
+} = storeToRefs(projectStore);
+const {
+  shotgunPromptContext,
+  isGeneratingContext,
+  generationProgressData,
+  userTask,
+  rulesContent,
+  finalPrompt,
+  isAutoContextLoading,
+} = storeToRefs(contextStore);
+const {
+  hasActiveLlmKey,
+  isLlmSettingsModalVisible,
+  llmSettings,
+} = storeToRefs(llmStore);
+const { logMessages } = storeToRefs(logStore);
+
 const centralPanelRef = ref(null); 
 const bottomConsoleRef = ref(null);
 const MIN_CONSOLE_HEIGHT = 50;
 const consoleHeight = ref(MIN_CONSOLE_HEIGHT); // Initial height in pixels
+let logEntryId = 0;
 
 function addLog(message, type = 'info', targetConsole = 'bottom') {
   const logEntry = {
+    id: ++logEntryId,
     message,
     type,
     timestamp: new Date().toLocaleTimeString()
   };
 
   if (targetConsole === 'bottom' || targetConsole === 'both') {
-    logMessages.value.push(logEntry);
+    logStore.add(logEntry);
   }
   if (targetConsole === 'step' || targetConsole === 'both') {
     if (centralPanelRef.value && currentStep.value === 3 && centralPanelRef.value.addLogToStep3Console) {
@@ -105,30 +130,28 @@ function addLog(message, type = 'info', targetConsole = 'bottom') {
   }
 }
 
-const projectRoot = ref('');
-const fileTree = ref([]);
-const shotgunPromptContext = ref('');
-const loadingError = ref('');
-const useGitignore = ref(true);
-const useCustomIgnore = ref(true);
 const manuallyToggledNodes = reactive(new Map());
-const isGeneratingContext = ref(false);
-const generationProgressData = ref({ current: 0, total: 0 });
-const isFileTreeLoading = ref(false);
-const platform = ref('unknown'); // To store OS platform (e.g., 'darwin', 'windows', 'linux')
-const userTask = ref('');
-const rulesContent = ref('');
-const finalPrompt = ref('');
-const hasActiveLlmKey = ref(false);
-const isAutoContextLoading = ref(false);
 const autoContextButtonTexture = ref('');
-const isLlmSettingsModalVisible = ref(false);
-const llmSettings = ref({});
 let debounceTimer = null;
-
-// Watcher related
-const projectFilesChangedPendingReload = ref(false);
 let unlistenProjectFilesChanged = null;
+let unlistenShotgunContextGenerated = null;
+let unlistenShotgunContextError = null;
+let unlistenShotgunContextGenerationProgress = null;
+let unlistenAutoContextError = null;
+const {
+  mapDataToTreeRecursive,
+  toggleExcludeNode,
+  updateAllNodesExcludedState,
+  buildExcludedPathsPayload,
+  buildIgnoredPathsPayloadForAutoContext,
+  normalizeRelPath,
+} = useFileTreeUtils({
+  useGitignore,
+  useCustomIgnore,
+  manuallyToggledNodes,
+  fileTree,
+  addLog,
+});
 
 async function selectProjectFolderHandler() {
   isFileTreeLoading.value = true;
@@ -182,161 +205,6 @@ async function loadFileTree(dirPath) {
     checkAndProcessPendingFileTreeReload();
   }
 }
-
-function calculateNodeExcludedState(node) {
-  const manualToggle = manuallyToggledNodes.get(node.relPath);
-  if (manualToggle !== undefined) return manualToggle;
-  if (useGitignore.value && node.isGitignored) return true;
-  if (useCustomIgnore.value && node.isCustomIgnored) return true;
-  return false;
-}
-
-function mapDataToTreeRecursive(nodes, parent) {
-  if (!nodes) return [];
-  return nodes.map(node => {
-    const isRootNode = parent === null;
-    const reactiveNode = reactive({
-      ...node,
-      expanded: node.isDir ? isRootNode : undefined,
-      parent: parent,
-      children: [] 
-    });
-    reactiveNode.excluded = calculateNodeExcludedState(reactiveNode);
-
-    if (node.children && node.children.length > 0) {
-      reactiveNode.children = mapDataToTreeRecursive(node.children, reactiveNode);
-    }
-    return reactiveNode;
-  });
-}
-
-function isAnyParentVisuallyExcluded(node) {
-  if (!node || !node.parent) {
-    return false;
-  }
-  let current = node.parent;
-  while (current) {
-    if (current.excluded) { // current.excluded reflects its visual/checkbox state
-      return true;
-    }
-    current = current.parent;
-  }
-  return false;
-}
-
-function hasVisuallyIncludedDescendant(node) {
-  if (!node || !node.children || node.children.length === 0) {
-    return false;
-  }
-  return node.children.some((child) => !child.excluded || hasVisuallyIncludedDescendant(child));
-}
-
-function collectTrulyExcludedPaths(nodes, target) {
-  if (!nodes || nodes.length === 0) return;
-  nodes.forEach((node) => {
-    if (node.excluded && !hasVisuallyIncludedDescendant(node)) {
-      target.push(node.relPath);
-    } else if (node.children && node.children.length > 0) {
-      collectTrulyExcludedPaths(node.children, target);
-    }
-  });
-}
-
-function buildExcludedPathsPayload() {
-  const excluded = [];
-  collectTrulyExcludedPaths(fileTree.value, excluded);
-  return excluded;
-}
-
-function collectIgnoredPathsOnly(nodes, target) {
-  if (!nodes || nodes.length === 0) return;
-  nodes.forEach((node) => {
-    const ignoredByGit = useGitignore.value && node.isGitignored;
-    const ignoredByCustom = useCustomIgnore.value && node.isCustomIgnored;
-    const ignoredByRules = ignoredByGit || ignoredByCustom;
-
-    if (ignoredByRules && node.relPath) {
-      // For auto-context, we exclude whole branches based on the root ignored node.
-      // Children may still be present in the UI tree (e.g. inside gitignored folders),
-      // but for the auto-context tree it's enough to mark only the root path here.
-      target.push(node.relPath);
-      return;
-    }
-
-    if (node.children && node.children.length > 0) {
-      collectIgnoredPathsOnly(node.children, target);
-    }
-  });
-}
-
-function buildIgnoredPathsPayloadForAutoContext() {
-  const ignored = [];
-  collectIgnoredPathsOnly(fileTree.value, ignored);
-  return ignored;
-}
-
-function normalizeRelPath(value) {
-  if (!value) return '';
-  return value.replace(/\\/g, '/').replace(/^\.\//, '').replace(/^\/+/, '');
-}
-
-function toggleExcludeNode(nodeToToggle) {
-  // If the node is under an unselected parent and is currently unselected itself (nodeToToggle.excluded is true),
-  // the first click should select it (set nodeToToggle.excluded to false).
-  if (isAnyParentVisuallyExcluded(nodeToToggle) && nodeToToggle.excluded) {
-    nodeToToggle.excluded = false;
-  } else {
-    // Otherwise, normal toggle behavior.
-    nodeToToggle.excluded = !nodeToToggle.excluded;
-  }
-  manuallyToggledNodes.set(nodeToToggle.relPath, nodeToToggle.excluded);
-
-  // FIX: When toggling a folder, clear manual overrides for all descendants
-  // so they inherit the new state of the parent. This fixes the issue where
-  // Auto Context pins all files, preventing parent folders from affecting children.
-  if (nodeToToggle.isDir) {
-    clearDescendantManualToggles(nodeToToggle);
-  }
-
-  addLog(`Toggled exclusion for ${nodeToToggle.name} to ${nodeToToggle.excluded}`, 'info', 'bottom');
-}
-
-function clearDescendantManualToggles(node) {
-  if (node.children && node.children.length > 0) {
-    node.children.forEach(child => {
-      manuallyToggledNodes.delete(child.relPath);
-      clearDescendantManualToggles(child);
-    });
-  }
-}
-
-function updateAllNodesExcludedState(nodesToUpdate) { // This is the public-facing function
-  // It calls the recursive helper, starting with parentIsVisuallyExcluded = false for root nodes.
-  _updateAllNodesExcludedStateRecursive(nodesToUpdate, false);
-}
-
-function _updateAllNodesExcludedStateRecursive(nodesToUpdate, parentIsVisuallyExcluded) {
-   if (!nodesToUpdate || nodesToUpdate.length === 0) return;
-   nodesToUpdate.forEach(node => {
-    const manualToggle = manuallyToggledNodes.get(node.relPath);
-    let isExcludedByRule = false;
-    if (useGitignore.value && node.isGitignored) isExcludedByRule = true;
-    if (useCustomIgnore.value && node.isCustomIgnored) isExcludedByRule = true;
-
-    if (manualToggle !== undefined) {
-      // If there's a manual toggle, it dictates the state.
-      node.excluded = manualToggle;
-    } else {
-      // If not manually toggled, it's excluded if a rule matches OR if its parent is visually excluded.
-      // This establishes the default inherited exclusion for visual purposes.
-      node.excluded = isExcludedByRule || parentIsVisuallyExcluded;
-    }
-
-     if (node.children && node.children.length > 0) {
-      _updateAllNodesExcludedStateRecursive(node.children, node.excluded); // Pass current node's new visual excluded state
-     }
-   });
- }
 
 function toggleGitignoreHandler(value) {
   useGitignore.value = value;
@@ -432,33 +300,6 @@ function navigateToStep(stepId) {
   }
 }
 
-function handleComposedPromptUpdate(prompt) {
-  finalPrompt.value = prompt;
-  addLog(`MainLayout: Composed LLM prompt updated (${prompt.length} chars).`, 'debug', 'bottom');
-  // Logic to mark step 2 as complete can go here
-  if (currentStep.value === 2 && prompt && steps.value[0].completed) {
-    const step2 = steps.value.find(s => s.id === 2);
-    if (step2 && !step2.completed) {
-      step2.completed = true;
-      addLog("Step 2: Prompt composed. Ready to proceed to Step 3.", "success", "bottom");
-    }
-  }
-}
-
-async function handleStepAction(actionName, payload) {
-  addLog(`Action: ${actionName} triggered from step ${currentStep.value}.`, 'info', 'bottom');
-  if (payload && actionName === 'composePrompt') {
-    addLog(`Prompt for diff: "${payload.prompt}"`, 'info', 'bottom');
-    return;
-  }
-
-  if (!actionName) {
-    return;
-  }
-
-  addLog(`No handler registered for action: ${actionName}`, 'debug', 'bottom');
-}
-
 const isResizing = ref(false);
 
 function startResize(event) {
@@ -483,7 +324,7 @@ function stopResize() {
 }
 
 onMounted(() => {
-  EventsOn("shotgunContextGenerated", (output) => {
+  unlistenShotgunContextGenerated = EventsOn("shotgunContextGenerated", (output) => {
     addLog("Wails event: shotgunContextGenerated RECEIVED", 'debug', 'bottom');
     
     if (shotgunPromptContext.value !== output) {
@@ -507,7 +348,7 @@ onMounted(() => {
     checkAndProcessPendingFileTreeReload(); // Check after context generation
   });
 
-  EventsOn("shotgunContextError", (errorMsg) => {
+  unlistenShotgunContextError = EventsOn("shotgunContextError", (errorMsg) => {
     addLog(`Wails event: shotgunContextError RECEIVED: ${errorMsg}`, 'debug', 'bottom');
     shotgunPromptContext.value = "Error: " + errorMsg;
     isGeneratingContext.value = false;
@@ -515,11 +356,11 @@ onMounted(() => {
     checkAndProcessPendingFileTreeReload(); // Check after context generation error
   });
 
-  EventsOn("shotgunContextGenerationProgress", (progress) => {
+  unlistenShotgunContextGenerationProgress = EventsOn("shotgunContextGenerationProgress", (progress) => {
     // console.log("FE: Progress event:", progress); // For debugging in Browser console
     generationProgressData.value = progress;
   });
-  EventsOn("autoContextError", (message) => {
+  unlistenAutoContextError = EventsOn("autoContextError", (message) => {
     isAutoContextLoading.value = false;
     addLog(`Auto context error: ${message}`, 'error', 'bottom');
   });
@@ -557,10 +398,12 @@ onMounted(() => {
       addLog(`Watchman: Ignoring event for ${changedRootDir}, current root is ${projectRoot.value}`, 'debug');
       return;
     }
-    addLog(`Watchman: Event "projectFilesChanged" received for ${changedRootDir}.`, 'debug');
     if (isFileTreeLoading.value || isGeneratingContext.value) {
+      const wasPending = projectFilesChangedPendingReload.value;
       projectFilesChangedPendingReload.value = true;
-      addLog("Watchman: File change detected, reload queued as system is busy.", 'info');
+      if (!wasPending) {
+        addLog("Watchman: File change detected, reload queued as system is busy.", 'info');
+      }
     } else {
       addLog("Watchman: File change detected, reloading tree immediately.", 'info');
       loadFileTree(projectRoot.value); // This will set isFileTreeLoading = true
@@ -580,7 +423,18 @@ onBeforeUnmount(async () => {
   if (unlistenProjectFilesChanged) {
     unlistenProjectFilesChanged();
   }
-  // Remember to unlisten other events if they return unlistener functions
+  if (unlistenShotgunContextGenerated) {
+    unlistenShotgunContextGenerated();
+  }
+  if (unlistenShotgunContextError) {
+    unlistenShotgunContextError();
+  }
+  if (unlistenShotgunContextGenerationProgress) {
+    unlistenShotgunContextGenerationProgress();
+  }
+  if (unlistenAutoContextError) {
+    unlistenAutoContextError();
+  }
 });
 
 watch([fileTree, useGitignore, useCustomIgnore], ([newFileTree, newUseGitignore, newUseCustomIgnore], [oldFileTree, oldUseGitignore, oldUseCustomIgnore]) => {
@@ -593,6 +447,16 @@ watch([fileTree, useGitignore, useCustomIgnore], ([newFileTree, newUseGitignore,
   updateAllNodesExcludedState(fileTree.value);
   debouncedTriggerShotgunContextGeneration();
 }, { deep: true });
+
+watch(finalPrompt, (prompt) => {
+  if (currentStep.value === 2 && prompt && steps.value[0].completed) {
+    const step2 = steps.value.find((s) => s.id === 2);
+    if (step2 && !step2.completed) {
+      step2.completed = true;
+      addLog("Step 2: Prompt composed. Ready to proceed to Step 3.", "success", "bottom");
+    }
+  }
+});
 
 watch(projectRoot, async (newRoot, oldRoot) => {
   if (oldRoot) {
@@ -634,24 +498,6 @@ function handleCustomRulesUpdated() {
     // The watch on fileTree (and its subsequent call to debouncedTriggerShotgunContextGeneration)
     // will then handle regenerating the context.
     loadFileTree(projectRoot.value);
-  }
-}
-
-function handleUserTaskUpdate(val) {
-  if (userTask.value !== val) {
-    userTask.value = val;
-    if (currentStep.value !== 2) {
-      finalPrompt.value = '';
-    }
-  }
-}
-
-function handleRulesContentUpdate(val) {
-  if (rulesContent.value !== val) {
-    rulesContent.value = val;
-    if (currentStep.value !== 2) {
-      finalPrompt.value = '';
-    }
   }
 }
 

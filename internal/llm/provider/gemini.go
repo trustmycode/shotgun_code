@@ -2,13 +2,13 @@ package provider
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/tmc/langchaingo/llms"
 	"github.com/tmc/langchaingo/llms/googleai"
-	"encoding/json"
 )
 
 type geminiProvider struct {
@@ -69,4 +69,15 @@ func (g *geminiProvider) Generate(ctx context.Context, prompt string) (string, s
 		return "", debugString, err
 	}
 	return output, debugString, nil
+}
+
+func (g *geminiProvider) GenerateStream(ctx context.Context, prompt string, onChunk func(chunk string)) (string, string, error) {
+	output, apiCall, err := g.Generate(ctx, prompt)
+	if err != nil {
+		return "", apiCall, err
+	}
+	if onChunk != nil && output != "" {
+		onChunk(output)
+	}
+	return output, apiCall, nil
 }

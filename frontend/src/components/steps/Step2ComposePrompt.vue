@@ -26,10 +26,16 @@
         <button
           class="text-xs text-blue-600 hover:underline"
           type="button"
-          @click="emit('open-llm-settings')"
+          @click="openLlmSettings"
         >
           Setup model
         </button>
+        <div
+          v-if="isGeneratingContext"
+          class="text-xs text-amber-700 font-medium"
+        >
+          Updating context...
+        </div>
       </div>
     </div>
 
@@ -83,7 +89,7 @@
             </div>
             <button
               @click="copyFinalPromptToClipboard"
-              :disabled="!props.finalPrompt || isLoadingFinalPrompt"
+              :disabled="!finalPrompt || isLoadingFinalPrompt"
               class="px-3 py-1 bg-blue-500 text-white text-xs font-semibold rounded-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 disabled:bg-gray-300"
             >
               {{ copyButtonText }}
@@ -115,21 +121,34 @@
           <textarea
             id="rules-content"
             :value="rulesContent"
-            @input="(e) => emit('update:rulesContent', e.target.value)"
+            @input="updateRulesContent"
             rows="8"
             class="w-full p-2 border border-gray-300 rounded-md shadow-sm bg-gray-100 text-sm font-mono"
             placeholder="Rules for AI..."
           ></textarea>
         </div>
 
+        <div class="flex items-center gap-2">
+          <label class="block text-sm font-medium text-gray-700"
+            >Files to include:</label
+          >
+          <div
+            v-if="isGeneratingContext"
+            class="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-500"
+          ></div>
+          <span v-if="isGeneratingContext" class="text-xs text-gray-500"
+            >Refreshing...</span
+          >
+        </div>
+
         <LargeTextViewer
-          label="Files to include:"
-          :content="props.fileListContext"
+          :content="fileListContext"
           placeholder="File list from Step 1 (Prepare Context) will appear here..."
-          :platform="props.platform"
+          :platform="platform"
           min-height="200px"
           :max-display-length="10000"
           copy-button-label="Copy All"
+          :show-header="false"
         />
       </div>
 
@@ -163,7 +182,7 @@
           </div>
           <button
             @click="copyFinalPromptToClipboard"
-            :disabled="!props.finalPrompt || isLoadingFinalPrompt"
+            :disabled="!finalPrompt || isLoadingFinalPrompt"
             class="px-3 py-1 bg-blue-500 text-white text-xs font-semibold rounded-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 disabled:bg-gray-300 whitespace-nowrap flex-shrink-0"
           >
             {{ copyButtonText }}
@@ -182,10 +201,11 @@
           >
             <LargeTextViewer
               class="flex-grow h-full"
-              :content="props.finalPrompt"
+              :content="finalPrompt"
+              :enable-token-estimation="false"
               label="Generated prompt preview"
               placeholder="The final prompt will be generated here..."
-              :platform="props.platform"
+              :platform="platform"
               min-height="0px"
               max-height="100%"
               :max-display-length="15000"
@@ -242,59 +262,52 @@
 </template>
 
 <script setup>
-import { ref, watch, onMounted, computed } from "vue";
-import { ClipboardSetText as WailsClipboardSetText } from "../../../wailsjs/runtime/runtime";
+import { ref, watch, onMounted, onBeforeUnmount, computed } from "vue";
+import { storeToRefs } from "pinia";
+import {
+  ClipboardSetText as WailsClipboardSetText,
+  EventsOn,
+  LogInfo as LogInfoRuntime,
+  LogError as LogErrorRuntime,
+} from "../../../wailsjs/runtime/runtime";
 import {
   GetCustomPromptRules,
   SetCustomPromptRules,
   ExecuteLLMPrompt,
+  ExecuteLLMPromptStream,
+  CancelLLMPromptStream,
 } from "../../../wailsjs/go/main/App";
-import {
-  LogInfo as LogInfoRuntime,
-  LogError as LogErrorRuntime,
-} from "../../../wailsjs/runtime/runtime";
 import CustomRulesModal from "../CustomRulesModal.vue";
 import LargeTextViewer from "../common/LargeTextViewer.vue";
+import { useProjectStore } from "../../stores/projectStore";
+import { useContextStore } from "../../stores/contextStore";
+import { useLLMStore } from "../../stores/llmStore";
+import { useTokenEstimator } from "../../composables/useTokenEstimator";
 
 import devTemplateContentFromFile from "../../../../design/prompts/prompt_makeDiffGitFormat.md?raw";
 import architectTemplateContentFromFile from "../../../../design/prompts/prompt_makePlan.md?raw";
 import findBugTemplateContentFromFile from "../../../../design/prompts/prompt_analyzeBug.md?raw";
 import projectManagerTemplateContentFromFile from "../../../../design/prompts/prompt_projectManager.md?raw";
 
-const props = defineProps({
-  fileListContext: {
-    type: String,
-    default: "",
-  },
-  platform: {
-    // To know if we are on macOS
-    type: String,
-    default: "unknown",
-  },
-  userTask: {
-    type: String,
-    default: "",
-  },
-  rulesContent: {
-    type: String,
-    default: "",
-  },
-  finalPrompt: {
-    type: String,
-    default: "",
-  },
-  hasActiveLlmKey: {
-    type: Boolean,
-    default: false,
-  },
-});
+const projectStore = useProjectStore();
+const contextStore = useContextStore();
+const llmStore = useLLMStore();
 
-const emit = defineEmits([
-  "update:finalPrompt",
-  "update:userTask",
-  "update:rulesContent",
-  "open-llm-settings",
-]);
+const { platform } = storeToRefs(projectStore);
+const {
+  shotgunPromptContext: fileListContext,
+  isGeneratingContext,
+  userTask,
+  rulesContent,
+  finalPrompt,
+} = storeToRefs(contextStore);
+const {
+  hasActiveLlmKey,
+  isLlmSettingsModalVisible,
+  activeStreamRequestId,
+  currentStreamingResponse,
+} = storeToRefs(llmStore);
+const { estimateTokensForText } = useTokenEstimator();
 
 const promptTemplates = {
   architect: { name: "Architect", content: architectTemplateContentFromFile },
@@ -321,9 +334,15 @@ const currentPromptRulesForModal = ref("");
 
 // Response Modal State
 const isResponseModalVisible = ref(false);
-const currentResponse = ref("");
+const currentResponse = computed({
+  get: () => currentStreamingResponse.value || "",
+  set: (value) => {
+    currentStreamingResponse.value = value || "";
+  },
+});
 const isExecuting = ref(false);
 const copyResponseButtonText = ref("Copy Response");
+const streamReceivedAnyChunk = ref(false);
 
 const isFirstMount = ref(true);
 const isFinalPromptCollapsed = ref(false);
@@ -331,10 +350,19 @@ const leftColumnClass = computed(() =>
   isFinalPromptCollapsed.value ? "w-full" : "w-1/2",
 );
 
-const localUserTask = ref(props.userTask);
+const localUserTask = ref(userTask.value);
+const promptTokenCount = ref(0);
+const promptTokenMethod = ref("heuristic");
+let tokenEstimateDebounceTimer = null;
+let unlistenStreamChunk = null;
+let unlistenStreamEnd = null;
+let unlistenStreamError = null;
 
 const hasExecutePrerequisites = computed(() => {
-  if (!props.hasActiveLlmKey) {
+  if (isGeneratingContext.value || isLoadingFinalPrompt.value) {
+    return false;
+  }
+  if (!hasActiveLlmKey.value) {
     return false;
   }
   if (!localUserTask.value) {
@@ -354,15 +382,37 @@ const executeButtonClass = computed(() => {
 });
 
 const DEFAULT_RULES = `no additional rules`;
+const promptCharCount = computed(() => (finalPrompt.value || "").length);
+
+const approximateTokens = computed(() => {
+  if (promptTokenCount.value > 0) {
+    return promptTokenCount.value.toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+  }
+  const fallback = Math.round(promptCharCount.value / 3);
+  return fallback.toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+});
+
+const tooltipText = computed(() => {
+  const method = promptTokenMethod.value || "heuristic";
+  return `Estimated with ${method}`;
+});
+
+const charCountColorClass = computed(() => {
+  const count = promptCharCount.value;
+  if (count < 1000000) return "text-green-600";
+  if (count <= 4000000) return "text-yellow-500";
+  return "text-red-600";
+});
 
 onMounted(async () => {
+  bindStreamListeners();
   try {
-    localUserTask.value = props.userTask;
+    localUserTask.value = userTask.value;
     // Load rules from the backend only on the first mount
     if (isFirstMount.value) {
       const fetchedRules = await GetCustomPromptRules();
-      if (!props.rulesContent) {
-        emit("update:rulesContent", fetchedRules);
+      if (!rulesContent.value) {
+        rulesContent.value = fetchedRules;
       }
       isFirstMount.value = false;
     }
@@ -371,15 +421,29 @@ onMounted(async () => {
     LogErrorRuntime(
       `Failed to load custom prompt rules: ${error.message || error}`,
     );
-    if (isFirstMount.value && !props.rulesContent) {
-      emit("update:rulesContent", DEFAULT_RULES);
+    if (isFirstMount.value && !rulesContent.value) {
+      rulesContent.value = DEFAULT_RULES;
     }
     isFirstMount.value = false;
   }
 
-  if (!props.finalPrompt && (props.fileListContext || props.userTask)) {
+  if (!finalPrompt.value && (fileListContext.value || userTask.value)) {
     debouncedUpdateFinalPrompt();
   }
+  debouncedEstimatePromptTokens();
+});
+
+onBeforeUnmount(() => {
+  if (finalPromptDebounceTimer) clearTimeout(finalPromptDebounceTimer);
+  if (userTaskInputDebounceTimer) clearTimeout(userTaskInputDebounceTimer);
+  if (tokenEstimateDebounceTimer) clearTimeout(tokenEstimateDebounceTimer);
+  if (activeStreamRequestId.value) {
+    CancelLLMPromptStream(activeStreamRequestId.value).catch(() => {});
+    llmStore.clearStream();
+  }
+  if (unlistenStreamChunk) unlistenStreamChunk();
+  if (unlistenStreamEnd) unlistenStreamEnd();
+  if (unlistenStreamError) unlistenStreamError();
 });
 
 async function updateFinalPrompt() {
@@ -394,12 +458,12 @@ async function updateFinalPrompt() {
     let populatedPrompt = currentTemplateContent;
     populatedPrompt = populatedPrompt.replace(
       "{TASK}",
-      props.userTask || "No task provided by the user.",
+      userTask.value || "No task provided by the user.",
     );
-    populatedPrompt = populatedPrompt.replace("{RULES}", props.rulesContent);
+    populatedPrompt = populatedPrompt.replace("{RULES}", rulesContent.value);
     populatedPrompt = populatedPrompt.replace(
       "{FILE_STRUCTURE}",
-      props.fileListContext || "No file structure context provided.",
+      fileListContext.value || "No file structure context provided.",
     );
 
     // Insert current date in YYYY-MM-DD format
@@ -410,7 +474,8 @@ async function updateFinalPrompt() {
     const currentDate = `${yyyy}-${mm}-${dd}`;
     populatedPrompt = populatedPrompt.replaceAll("{CURRENT_DATE}", currentDate);
 
-    emit("update:finalPrompt", populatedPrompt);
+    finalPrompt.value = populatedPrompt;
+    debouncedEstimatePromptTokens();
   } finally {
     isLoadingFinalPrompt.value = false;
   }
@@ -427,7 +492,7 @@ function debouncedUpdateFinalPrompt() {
 }
 
 watch(
-  () => props.userTask,
+  userTask,
   (newValue) => {
     if (newValue !== localUserTask.value) {
       localUserTask.value = newValue;
@@ -438,21 +503,22 @@ watch(
 watch(localUserTask, (currentValue) => {
   clearTimeout(userTaskInputDebounceTimer);
   userTaskInputDebounceTimer = setTimeout(() => {
-    if (currentValue !== props.userTask) {
-      emit("update:userTask", currentValue);
+    if (currentValue !== userTask.value) {
+      userTask.value = currentValue;
     }
   }, 300);
 });
 
 watch(
   [
-    () => props.userTask,
-    () => props.rulesContent,
-    () => props.fileListContext,
+    userTask,
+    rulesContent,
+    fileListContext,
     selectedPromptTemplateKey,
   ],
   () => {
     debouncedUpdateFinalPrompt();
+    debouncedEstimatePromptTokens();
   },
   { deep: true },
 );
@@ -462,14 +528,22 @@ watch(selectedPromptTemplateKey, () => {
     `Prompt template changed to: ${promptTemplates[selectedPromptTemplateKey.value].name}. Updating final prompt.`,
   );
   debouncedUpdateFinalPrompt();
+  debouncedEstimatePromptTokens();
 });
 
+watch(
+  finalPrompt,
+  () => {
+    debouncedEstimatePromptTokens();
+  },
+);
+
 async function copyFinalPromptToClipboard() {
-  if (!props.finalPrompt) return;
+  if (!finalPrompt.value) return;
 
   // Use navigator.clipboard.writeText as primary (WailsClipboardSetText has UTF-8 encoding issues with box-drawing chars on darwin)
   try {
-    await navigator.clipboard.writeText(props.finalPrompt);
+    await navigator.clipboard.writeText(finalPrompt.value);
     copyButtonText.value = "Copied!";
     resetCopyButtonLabel();
     return;
@@ -479,7 +553,7 @@ async function copyFinalPromptToClipboard() {
 
   // Fallback to Wails clipboard API
   try {
-    await WailsClipboardSetText(props.finalPrompt);
+    await WailsClipboardSetText(finalPrompt.value);
     copyButtonText.value = "Copied!";
   } catch (fallbackErr) {
     console.error(
@@ -507,7 +581,7 @@ async function openPromptRulesModal() {
     LogErrorRuntime(
       `Error fetching prompt rules for modal: ${error.message || error}`,
     );
-    currentPromptRulesForModal.value = props.rulesContent || DEFAULT_RULES;
+    currentPromptRulesForModal.value = rulesContent.value || DEFAULT_RULES;
     isPromptRulesModalVisible.value = true;
   }
 }
@@ -515,7 +589,7 @@ async function openPromptRulesModal() {
 async function handleSavePromptRules(newRules) {
   try {
     await SetCustomPromptRules(newRules);
-    emit("update:rulesContent", newRules);
+    rulesContent.value = newRules;
     isPromptRulesModalVisible.value = false;
     LogInfoRuntime("Custom prompt rules saved successfully.");
   } catch (error) {
@@ -528,6 +602,14 @@ function handleCancelPromptRules() {
   isPromptRulesModalVisible.value = false;
 }
 
+function updateRulesContent(event) {
+  rulesContent.value = event?.target?.value ?? "";
+}
+
+function openLlmSettings() {
+  isLlmSettingsModalVisible.value = true;
+}
+
 async function handleExecutePrompt() {
   if (!hasExecutePrerequisites.value) {
     return;
@@ -537,33 +619,113 @@ async function handleExecutePrompt() {
   }
 
   isExecuting.value = true;
+  streamReceivedAnyChunk.value = false;
+  llmStore.clearStream();
+  isResponseModalVisible.value = true;
   LogInfoRuntime("Executing LLM prompt...");
   try {
-    const result = await ExecuteLLMPrompt(
+    const requestId = await ExecuteLLMPromptStream(
       localUserTask.value,
-      props.finalPrompt,
+      finalPrompt.value,
     );
-    if (result && result.response) {
-      currentResponse.value = result.response;
-      isResponseModalVisible.value = true;
-      LogInfoRuntime("LLM Execution successful.");
-    } else {
-      throw new Error("Received empty response from backend.");
-    }
+    llmStore.startStream(requestId);
+    LogInfoRuntime(`LLM stream started: ${requestId}`);
   } catch (err) {
-    console.error("Error executing prompt:", err);
-    LogErrorRuntime(`Error executing prompt: ${err.message || err}`);
-    // Optionally show error in a toast or the modal
-    currentResponse.value = `Error: ${err.message || err}`;
-    isResponseModalVisible.value = true;
-  } finally {
-    isExecuting.value = false;
+    LogErrorRuntime(`Streaming execute failed, using fallback: ${err?.message || err}`);
+    try {
+      const result = await ExecuteLLMPrompt(
+        localUserTask.value,
+        finalPrompt.value,
+      );
+      if (result && result.response) {
+        llmStore.finalizeStream(result.response);
+        LogInfoRuntime("LLM Execution successful (non-stream fallback).");
+      } else {
+        throw new Error("Received empty response from backend.");
+      }
+    } catch (fallbackErr) {
+      console.error("Error executing prompt:", fallbackErr);
+      LogErrorRuntime(`Error executing prompt: ${fallbackErr.message || fallbackErr}`);
+      currentResponse.value = `Error: ${fallbackErr.message || fallbackErr}`;
+    } finally {
+      isExecuting.value = false;
+    }
+    return;
   }
 }
 
-function closeResponseModal() {
+function bindStreamListeners() {
+  unlistenStreamChunk = EventsOn("llmPromptStreamChunk", (payload) => {
+    if (!payload || payload.requestId !== activeStreamRequestId.value) return;
+    if (payload.chunk) {
+      llmStore.appendStreamChunk(payload.chunk);
+      streamReceivedAnyChunk.value = true;
+    }
+  });
+
+  unlistenStreamEnd = EventsOn("llmPromptStreamEnd", (payload) => {
+    if (!payload || payload.requestId !== activeStreamRequestId.value) return;
+    if (!streamReceivedAnyChunk.value && payload.response) {
+      llmStore.finalizeStream(payload.response);
+    } else {
+      llmStore.finalizeStream("");
+    }
+    LogInfoRuntime("LLM stream completed.");
+    isExecuting.value = false;
+  });
+
+  unlistenStreamError = EventsOn("llmPromptStreamError", (payload) => {
+    if (!payload || payload.requestId !== activeStreamRequestId.value) return;
+    const partial = payload.partialResponse || "";
+    const message = payload.message || "Unknown stream error";
+    llmStore.failStream(partial, message);
+    LogErrorRuntime(`LLM stream error: ${message}`);
+    isExecuting.value = false;
+  });
+}
+
+function debouncedEstimatePromptTokens() {
+  if (tokenEstimateDebounceTimer) clearTimeout(tokenEstimateDebounceTimer);
+  tokenEstimateDebounceTimer = setTimeout(() => {
+    estimatePromptTokens();
+  }, 300);
+}
+
+async function estimatePromptTokens() {
+  const text = finalPrompt.value || "";
+  if (!text) {
+    promptTokenCount.value = 0;
+    promptTokenMethod.value = "heuristic";
+    return;
+  }
+
+  try {
+    const estimate = await estimateTokensForText(text);
+    const tokens = Number(estimate?.tokens || 0);
+    const method = estimate?.method || "heuristic";
+    promptTokenCount.value = tokens;
+    promptTokenMethod.value = method;
+  } catch (err) {
+    const fallback = Math.round(text.length / 3);
+    promptTokenCount.value = fallback;
+    promptTokenMethod.value = "heuristic";
+    LogErrorRuntime(`Failed to estimate prompt tokens on backend: ${err?.message || err}`);
+  } finally {
+    // no-op
+  }
+}
+
+async function closeResponseModal() {
+  if (isExecuting.value && activeStreamRequestId.value) {
+    try {
+      await CancelLLMPromptStream(activeStreamRequestId.value);
+    } catch {
+      // Ignore cancellation race where stream already ended.
+    }
+    isExecuting.value = false;
+  }
+  llmStore.clearStream();
   isResponseModalVisible.value = false;
-  currentResponse.value = "";
 }
 
 async function copyResponse() {

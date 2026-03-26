@@ -28,11 +28,11 @@
           id="api-key-input"
           type="password"
           v-model="localApiKeys[localProvider]"
-          placeholder="Paste the API key for the selected provider"
+          :placeholder="providersWithOptionalKey.has(localProvider) ? 'Optional for local providers' : 'Paste the API key for the selected provider'"
           class="w-full border border-gray-300 rounded-md p-2 text-sm"
           data-testid="api-key-input"
         />
-        <p class="text-xs text-gray-500 mt-1">Keys are stored locally inside the Shotgun settings file.</p>
+        <p class="text-xs text-gray-500 mt-1">Keys are stored locally inside the Shotgun settings file. For Ollama and LM Studio this field is optional.</p>
       </div>
 
       <div class="mb-4">
@@ -136,12 +136,16 @@ const providerOptions = [
   { value: 'openai', label: 'OpenAI' },
   { value: 'openrouter', label: 'OpenRouter' },
   { value: 'gemini', label: 'Google Gemini' },
+  { value: 'ollama', label: 'Ollama (Local)' },
+  { value: 'lmstudio', label: 'LM Studio (Local)' },
 ];
 
 const providerDefaultModels = {
   openai: 'gpt-5',
   openrouter: 'openai/gpt-5',
   gemini: 'gemini-2.5-pro',
+  ollama: 'llama3.2',
+  lmstudio: 'local-model',
 };
 
 const localProvider = ref('openai');
@@ -151,7 +155,11 @@ const localApiKeys = reactive({
   openai: '',
   openrouter: '',
   gemini: '',
+  ollama: '',
+  lmstudio: '',
 });
+
+const providersWithOptionalKey = new Set(['ollama', 'lmstudio']);
 
 const modelOptions = ref([]);
 const isLoadingModels = ref(false);
@@ -184,6 +192,8 @@ function syncStateFromProps() {
   localApiKeys.openai = settings.openAIKey || '';
   localApiKeys.openrouter = settings.openRouterKey || '';
   localApiKeys.gemini = settings.geminiKey || '';
+  localApiKeys.ollama = settings.ollamaKey || '';
+  localApiKeys.lmstudio = settings.lmStudioKey || '';
   modelOptions.value = [];
   errorMessage.value = '';
 }
@@ -238,7 +248,7 @@ async function fetchModels() {
 }
 
 async function handleSave() {
-  if (!activeKey.value) {
+  if (!providersWithOptionalKey.has(localProvider.value) && !activeKey.value) {
     errorMessage.value = 'API key is required.';
     return;
   }

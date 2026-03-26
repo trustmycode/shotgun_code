@@ -66,3 +66,6 @@ Show-DirectoryTree.ps1
 # If you have specific large files or data that shouldn't be in git
 # data/
 # assets_large/ 
+
+.codex/
+AGENTS.md

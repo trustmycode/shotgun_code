@@ -48,6 +48,8 @@ export namespace main {
 	    openAIKey: string;
 	    openRouterKey: string;
 	    geminiKey: string;
+	    ollamaKey: string;
+	    lmStudioKey: string;
 	    baseURL: string;
 	
 	    static createFrom(source: any = {}) {
@@ -61,6 +63,8 @@ export namespace main {
 	        this.openAIKey = source["openAIKey"];
 	        this.openRouterKey = source["openRouterKey"];
 	        this.geminiKey = source["geminiKey"];
+	        this.ollamaKey = source["ollamaKey"];
+	        this.lmStudioKey = source["lmStudioKey"];
 	        this.baseURL = source["baseURL"];
 	    }
 	}
@@ -104,6 +108,22 @@ export namespace main {
 		    }
 		    return a;
 		}
+	}
+	export class TokenEstimate {
+	    tokens: number;
+	    method: string;
+	    model: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new TokenEstimate(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.tokens = source["tokens"];
+	        this.method = source["method"];
+	        this.model = source["model"];
+	    }
 	}
 
 }

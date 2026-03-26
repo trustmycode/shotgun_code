@@ -5,7 +5,7 @@
     ref="consoleRootRef"
   >
     <div ref="consoleContentRef" class="flex-grow">
-      <div v-for="(log, index) in logMessages" :key="index" 
+      <div v-for="(log, index) in logMessages" :key="log.id ?? index" 
            :class="['whitespace-pre-wrap break-words', getLogColor(log.type)]">
         <span class="font-medium">[{{ log.timestamp }}]</span> 
         <span v-if="log.type !== 'info'" class="font-semibold">[{{ log.type.toUpperCase() }}] </span>
@@ -46,14 +46,14 @@ function getLogColor(type) {
   }
 }
 
-watch(() => props.logMessages, () => {
+watch(() => props.logMessages.length, () => {
   nextTick(() => {
     if (consoleRootRef.value) {
       // Scroll to the bottom (which is top due to flex-col-reverse)
       consoleRootRef.value.scrollTop = 0;
     }
   });
-}, { deep: true });
+});
 
 </script>
 
