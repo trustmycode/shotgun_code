@@ -5,10 +5,10 @@
     @click.self="handleCancel"
   >
     <div class="bg-white rounded-lg shadow-xl w-full max-w-xl p-6">
-      <h2 class="text-xl font-semibold text-gray-800 mb-4">LLM Settings</h2>
+      <h2 class="text-xl font-semibold text-gray-800 mb-4">Настройки моделей</h2>
 
       <div class="mb-4">
-        <label class="block text-sm font-medium text-gray-700 mb-1" for="provider-select">Provider</label>
+        <label class="block text-sm font-medium text-gray-700 mb-1" for="provider-select">Поставщик</label>
         <select
           id="provider-select"
           v-model="localProvider"
@@ -23,21 +23,21 @@
       </div>
 
       <div class="mb-4">
-        <label class="block text-sm font-medium text-gray-700 mb-1" for="api-key-input">API Key</label>
+        <label class="block text-sm font-medium text-gray-700 mb-1" for="api-key-input">Ключ доступа</label>
         <input
           id="api-key-input"
           type="password"
           v-model="localApiKeys[localProvider]"
-          placeholder="Paste the API key for the selected provider"
+          :placeholder="keyPresence[localProvider] ? 'Ключ уже сохранён; оставьте поле пустым, чтобы не менять его' : 'Вставьте ключ выбранного поставщика'"
           class="w-full border border-gray-300 rounded-md p-2 text-sm"
           data-testid="api-key-input"
         />
-        <p class="text-xs text-gray-500 mt-1">Keys are stored locally inside the Shotgun settings file.</p>
+        <p class="text-xs text-gray-500 mt-1">Ключ хранится только в локальном файле настроек с ограниченными правами доступа.</p>
       </div>
 
       <div class="mb-4">
         <label class="block text-sm font-medium text-gray-700 mb-1" for="base-url-input">
-          Custom Base URL (optional)
+          Пользовательский базовый адрес (необязательно)
         </label>
         <input
           id="base-url-input"
@@ -46,24 +46,25 @@
           placeholder="https://example.com/v1"
           class="w-full border border-gray-300 rounded-md p-2 text-sm"
         />
+        <p class="text-xs text-amber-700 mt-1">Ключ будет отправляться на этот адрес. Разрешены только защищённые адреса HTTPS.</p>
       </div>
 
       <div class="mb-4">
         <div class="flex justify-between items-center">
-          <label class="block text-sm font-medium text-gray-700" for="model-input">Model</label>
+          <label class="block text-sm font-medium text-gray-700" for="model-input">Модель</label>
           <button
             class="text-xs text-blue-600 hover:underline disabled:text-gray-400"
             :disabled="isLoadingModels"
             @click="fetchModels"
           >
-            {{ isLoadingModels ? 'Loading...' : 'Refresh models' }}
+            {{ isLoadingModels ? 'Загрузка…' : 'Обновить список' }}
           </button>
         </div>
         <input
           id="model-input"
           type="text"
           v-model="localModel"
-          placeholder="Type a model name"
+          placeholder="Введите название модели"
           class="w-full border border-gray-300 rounded-md p-2 text-sm"
           :disabled="isLoadingModels"
           data-testid="model-select"
@@ -82,7 +83,7 @@
             {{ model }}
           </button>
         </div>
-        <p class="text-xs text-gray-500 mt-1">Start typing to narrow down the suggestions or enter any custom value.</p>
+        <p class="text-xs text-gray-500 mt-1">Начните ввод, чтобы отфильтровать подсказки, либо укажите своё значение.</p>
       </div>
 
       <p v-if="errorMessage" class="text-red-600 text-sm mb-4 whitespace-pre-wrap">{{ errorMessage }}</p>
@@ -93,7 +94,7 @@
           @click="handleCancel"
           data-testid="cancel-btn"
         >
-          Cancel
+          Отмена
         </button>
         <button
           class="px-4 py-2 rounded-md text-white text-sm"
@@ -102,7 +103,7 @@
           @click="handleSave"
           data-testid="save-btn"
         >
-          {{ isSaving ? 'Saving…' : 'Save' }}
+          {{ isSaving ? 'Сохранение…' : 'Сохранить' }}
         </button>
       </div>
     </div>
@@ -152,13 +153,18 @@ const localApiKeys = reactive({
   openrouter: '',
   gemini: '',
 });
+const keyPresence = reactive({
+  openai: false,
+  openrouter: false,
+  gemini: false,
+});
 
 const modelOptions = ref([]);
 const isLoadingModels = ref(false);
 const isSaving = ref(false);
 const errorMessage = ref('');
 
-const activeKey = computed(() => localApiKeys[localProvider.value] || '');
+const hasActiveKey = computed(() => Boolean(localApiKeys[localProvider.value] || keyPresence[localProvider.value]));
 const filteredModelSuggestions = computed(() => {
   const query = (localModel.value || '').trim().toLowerCase();
   return modelOptions.value.filter((option) => {
@@ -181,9 +187,12 @@ function syncStateFromProps() {
   localProvider.value = settings.activeProvider || 'openai';
   localModel.value = settings.model || providerDefaultModels[localProvider.value] || '';
   localBaseUrl.value = settings.baseURL || '';
-  localApiKeys.openai = settings.openAIKey || '';
-  localApiKeys.openrouter = settings.openRouterKey || '';
-  localApiKeys.gemini = settings.geminiKey || '';
+  localApiKeys.openai = '';
+  localApiKeys.openrouter = '';
+  localApiKeys.gemini = '';
+  keyPresence.openai = Boolean(settings.hasOpenAIKey);
+  keyPresence.openrouter = Boolean(settings.hasOpenRouterKey);
+  keyPresence.gemini = Boolean(settings.hasGeminiKey);
   modelOptions.value = [];
   errorMessage.value = '';
 }
@@ -231,15 +240,15 @@ async function fetchModels() {
       localModel.value = names[0];
     }
   } catch (err) {
-    errorMessage.value = `Failed to load models: ${err?.message || err}`;
+    errorMessage.value = `Не удалось загрузить список моделей: ${err?.message || err}`;
   } finally {
     isLoadingModels.value = false;
   }
 }
 
 async function handleSave() {
-  if (!activeKey.value) {
-    errorMessage.value = 'API key is required.';
+  if (!hasActiveKey.value) {
+    errorMessage.value = 'Укажите ключ доступа.';
     return;
   }
   if (!localModel.value) {
@@ -249,7 +258,9 @@ async function handleSave() {
   isSaving.value = true;
   errorMessage.value = '';
   try {
-    await SetLlmApiKey(localProvider.value, activeKey.value);
+    if (localApiKeys[localProvider.value]) {
+      await SetLlmApiKey(localProvider.value, localApiKeys[localProvider.value]);
+    }
     await SetLlmBaseURL(localBaseUrl.value || '');
     await SetLlmProvider(localProvider.value);
     await SetLlmModel(localProvider.value, localModel.value);

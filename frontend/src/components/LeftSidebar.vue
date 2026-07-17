@@ -2,7 +2,7 @@
   <CustomRulesModal
     :is-visible="isCustomRulesModalVisible"
     :initial-rules="currentCustomRulesForModal"
-    title="Edit Custom Ignore Rules"
+    title="Изменение пользовательских правил исключения"
     ruleType="ignore"
     @save="handleSaveCustomRules"
     @cancel="handleCancelCustomRules"
@@ -14,33 +14,33 @@
         @click="$emit('select-folder')"
         class="w-full px-4 py-2 mb-2 bg-blue-600 text-white font-semibold rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50"
       >
-        Select Project Folder
+        Выбрать каталог проекта
       </button>
-      <div v-if="projectRoot" class="text-xs text-gray-600 mb-2 break-all">Selected: {{ projectRoot }}</div>
+      <div v-if="projectRoot" class="text-xs text-gray-600 mb-2 break-all">Выбрано: {{ projectRoot }}</div>
       
       <div v-if="projectRoot" class="mb-2">
-        <label class="flex items-center text-sm text-gray-700" title="Uses .gitignore file if present in the project folder">
+        <label class="flex items-center text-sm text-gray-700" title="Использовать файл .gitignore из каталога проекта">
           <input 
             type="checkbox" 
             :checked="useGitignore"
             @change="$emit('toggle-gitignore', $event.target.checked)"
             class="form-checkbox h-4 w-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500 mr-2"
           />
-          Use .gitignore rules
+          Использовать правила .gitignore
         </label>
-        <label class="flex items-center text-sm text-gray-700 mt-1" title="Uses ignore.glob file if present in the project folder">
+        <label class="flex items-center text-sm text-gray-700 mt-1" title="Использовать пользовательские правила исключения">
           <input
             type="checkbox"
             :checked="useCustomIgnore"
             @change="$emit('toggle-custom-ignore', $event.target.checked)"
             class="form-checkbox h-4 w-4 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500 mr-2"
           />
-          Use custom rules
-          <button @click="openCustomRulesModal" title="Edit custom ignore rules" class="ml-2 p-0.5 hover:bg-gray-200 rounded text-xs">⚙️</button>
+          Использовать свои правила
+          <button @click="openCustomRulesModal" title="Изменить правила исключения" class="ml-2 p-0.5 hover:bg-gray-200 rounded text-xs">⚙️</button>
         </label>
       </div>
 
-      <h2 class="text-lg font-semibold text-gray-700 mb-2">Project Files</h2>
+      <h2 class="text-lg font-semibold text-gray-700 mb-2">Файлы проекта</h2>
       <div class="border border-gray-300 rounded min-h-[200px] bg-white text-sm overflow-auto max-h-[50vh]">
         <FileTree 
             v-if="fileTreeNodes && fileTreeNodes.length" 
@@ -48,15 +48,15 @@
             :project-root="projectRoot"
             @toggle-exclude="(node) => $emit('toggle-exclude', node)"
         />
-        <p v-else-if="projectRoot && !loadingError" class="p-2 text-xs text-gray-500">Loading tree...</p>
-        <p v-else-if="!projectRoot" class="p-2 text-xs text-gray-500">Select a project folder to see files.</p>
+        <p v-else-if="projectRoot && !loadingError" class="p-2 text-xs text-gray-500">Загрузка дерева…</p>
+        <p v-else-if="!projectRoot" class="p-2 text-xs text-gray-500">Выберите каталог проекта, чтобы увидеть файлы.</p>
         <p v-if="loadingError" class="p-2 text-xs text-red-500">{{ loadingError }}</p>
       </div>
     </div>
 
     <!-- Stepper Navigation (can remain if needed for overall app flow) -->
     <div v-if="steps && steps.length > 0">
-      <h2 class="text-lg font-semibold text-gray-700 mb-2">Steps</h2>
+      <h2 class="text-lg font-semibold text-gray-700 mb-2">Этапы</h2>
       <div class="space-y-1">
         <div v-for="step in steps" :key="step.id">
           <button
@@ -153,4 +153,4 @@ function canNavigateToStep(stepId) {
 
 <style scoped>
 /* Add your styles here */
-</style> 
+</style>

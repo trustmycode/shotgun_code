@@ -14,7 +14,7 @@ export function GetCustomIgnoreRules():Promise<string>;
 
 export function GetCustomPromptRules():Promise<string>;
 
-export function GetLlmSettings():Promise<main.LLMSettings>;
+export function GetLlmSettings():Promise<main.PublicLLMSettings>;
 
 export function GetPromptHistory():Promise<Array<main.PromptHistoryItem>>;
 

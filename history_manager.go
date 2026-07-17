@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -8,6 +9,7 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -23,6 +25,46 @@ type PromptHistoryItem struct {
 
 type PromptHistory struct {
 	Items []PromptHistoryItem `json:"items"`
+}
+
+const (
+	maxPromptHistoryItems   = 50
+	maxPromptHistoryBytes   = 20 * 1024 * 1024
+	maxHistoryTaskBytes     = 64 * 1024
+	maxHistoryPromptBytes   = 10 * 1024 * 1024
+	maxHistoryResponseBytes = 8 * 1024 * 1024
+	maxHistoryAPICallBytes  = 256 * 1024
+)
+
+func trimPromptHistory(items []PromptHistoryItem) []PromptHistoryItem {
+	if len(items) > maxPromptHistoryItems {
+		items = items[:maxPromptHistoryItems]
+	}
+	total := 0
+	for index := range items {
+		items[index].UserTask = truncateUTF8(items[index].UserTask, maxHistoryTaskBytes)
+		items[index].ConstructedPrompt = truncateUTF8(items[index].ConstructedPrompt, maxHistoryPromptBytes)
+		items[index].Response = truncateUTF8(items[index].Response, maxHistoryResponseBytes)
+		items[index].APICall = truncateUTF8(items[index].APICall, maxHistoryAPICallBytes)
+		item := items[index]
+		itemSize := len(item.ID) + len(item.UserTask) + len(item.ConstructedPrompt) + len(item.Response) + len(item.APICall)
+		if index > 0 && total+itemSize > maxPromptHistoryBytes {
+			return items[:index]
+		}
+		total += itemSize
+	}
+	return items
+}
+
+func truncateUTF8(value string, maxBytes int) string {
+	if len(value) <= maxBytes {
+		return value
+	}
+	trimmed := value[:maxBytes]
+	for !utf8.ValidString(trimmed) {
+		trimmed = trimmed[:len(trimmed)-1]
+	}
+	return trimmed + "…"
 }
 
 type HistoryManager struct {
@@ -70,12 +112,16 @@ func (hm *HistoryManager) LoadHistory() error {
 		}
 		return err
 	}
+	if err := restrictPrivateFile(path); err != nil {
+		wailsRuntime.LogWarningf(hm.app.ctx, "Failed to restrict prompt history permissions: %v", err)
+	}
 
 	err = json.Unmarshal(data, &hm.history)
 	if err != nil {
 		wailsRuntime.LogErrorf(hm.app.ctx, "Error unmarshalling history: %v", err)
 		return err
 	}
+	hm.history.Items = trimPromptHistory(hm.history.Items)
 	return nil
 }
 
@@ -93,7 +139,7 @@ func (hm *HistoryManager) SaveHistory() error {
 		return err
 	}
 
-	return os.WriteFile(path, data, 0644)
+	return writePrivateFileAtomically(path, data)
 }
 
 func (hm *HistoryManager) AddItem(userTask, constructedPrompt, response, apiCall string) PromptHistoryItem {
@@ -110,6 +156,7 @@ func (hm *HistoryManager) AddItem(userTask, constructedPrompt, response, apiCall
 	}
 	// Prepend to keep newest first
 	hm.history.Items = append([]PromptHistoryItem{item}, hm.history.Items...)
+	hm.history.Items = trimPromptHistory(hm.history.Items)
 	hm.mu.Unlock()
 
 	// Save asynchronously to avoid blocking UI too much
@@ -154,7 +201,9 @@ func (a *App) ExecuteLLMPrompt(userTask, finalPrompt string) (PromptHistoryItem,
 	wailsRuntime.LogInfof(a.ctx, "Executing LLM prompt via %s (%s)...", cfg.Provider, cfg.Model)
 
 	// Use provider.Generate. Note: we don't have streaming here yet, so it waits for full response.
-	response, apiCall, err := providerInstance.Generate(a.ctx, finalPrompt)
+	requestCtx, cancel := context.WithTimeout(a.ctx, 2*time.Minute)
+	defer cancel()
+	response, apiCall, err := providerInstance.Generate(requestCtx, finalPrompt)
 
 	var historyItem PromptHistoryItem
 	if a.historyManager != nil {

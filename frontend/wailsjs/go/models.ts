@@ -42,26 +42,26 @@ export namespace main {
 		    return a;
 		}
 	}
-	export class LLMSettings {
+	export class PublicLLMSettings {
 	    activeProvider: string;
 	    model: string;
-	    openAIKey: string;
-	    openRouterKey: string;
-	    geminiKey: string;
 	    baseURL: string;
+	    hasOpenAIKey: boolean;
+	    hasOpenRouterKey: boolean;
+	    hasGeminiKey: boolean;
 	
 	    static createFrom(source: any = {}) {
-	        return new LLMSettings(source);
+	        return new PublicLLMSettings(source);
 	    }
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.activeProvider = source["activeProvider"];
 	        this.model = source["model"];
-	        this.openAIKey = source["openAIKey"];
-	        this.openRouterKey = source["openRouterKey"];
-	        this.geminiKey = source["geminiKey"];
 	        this.baseURL = source["baseURL"];
+	        this.hasOpenAIKey = source["hasOpenAIKey"];
+	        this.hasOpenRouterKey = source["hasOpenRouterKey"];
+	        this.hasGeminiKey = source["hasGeminiKey"];
 	    }
 	}
 	export class PromptHistoryItem {
@@ -126,4 +126,3 @@ export namespace provider {
 	}
 
 }
-

@@ -41,6 +41,7 @@ func newOpenAIProvider(cfg Config) (LLMProvider, error) {
 	opts := []openai.Option{
 		openai.WithToken(apiKey),
 		openai.WithModel(model),
+		openai.WithHTTPClient(providerHTTPClient),
 	}
 	// Preserve custom base URL behaviour for the langchaingo client.
 	if strings.TrimSpace(cfg.BaseURL) != "" {
@@ -181,7 +182,7 @@ func (o *openAIProvider) generateViaResponsesAPI(ctx context.Context, prompt str
 	// Newer Responses API may expect an explicit beta header; sending it is safe and explicit.
 	req.Header.Set("OpenAI-Beta", "responses=v1")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := providerHTTPClient.Do(req)
 	if err != nil {
 		log.Printf("openai responses API request failed: %v", err)
 		return "", debugString, fmt.Errorf("openai responses API request failed: %w", err)
@@ -189,13 +190,13 @@ func (o *openAIProvider) generateViaResponsesAPI(ctx context.Context, prompt str
 	defer resp.Body.Close()
 
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		limitedBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		log.Printf("openai responses API returned status %d: %s", resp.StatusCode, string(limitedBody))
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+		log.Printf("openai responses API returned status %d", resp.StatusCode)
 		return "", debugString, fmt.Errorf("openai responses API returned non-2xx status %d", resp.StatusCode)
 	}
 
 	var decoded responsesAPIResponse
-	if err := json.NewDecoder(resp.Body).Decode(&decoded); err != nil {
+	if err := decodeLimitedJSON(resp.Body, &decoded); err != nil {
 		log.Printf("failed to decode openai responses API payload: %v", err)
 		return "", debugString, fmt.Errorf("failed to decode openai responses API payload: %w", err)
 	}

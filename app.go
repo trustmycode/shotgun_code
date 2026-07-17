@@ -28,7 +28,7 @@ var ErrContextTooLong = errors.New("context is too long")
 //go:embed ignore.glob
 var defaultCustomIgnoreRulesContent string
 
-const defaultCustomPromptRulesContent = "no additional rules"
+const defaultCustomPromptRulesContent = "без дополнительных правил"
 
 const (
 	LLMProviderOpenAI     = "openai"
@@ -64,6 +64,7 @@ type App struct {
 	autoContextService          *AutoContextService
 	historyManager              *HistoryManager
 	llmCache                    cachedProvider
+	llmCacheMu                  sync.Mutex
 	autoContextButtonTexture    string
 }
 
@@ -219,10 +220,6 @@ func buildTreeRecursive(ctx context.Context, currentPath, rootPath string, gitIg
 		}
 		if customIgn != nil {
 			isCustomIgnored = customIgn.MatchesPath(pathToMatch)
-		}
-
-		if depth < 2 || strings.Contains(relPath, "node_modules") || strings.HasSuffix(relPath, ".log") {
-			fmt.Printf("Checking path: '%s' (original relPath: '%s'), IsDir: %v, Gitignored: %v, CustomIgnored: %v\n", pathToMatch, relPath, entry.IsDir(), isGitignored, isCustomIgnored)
 		}
 
 		node := &FileNode{
@@ -393,7 +390,9 @@ func (a *App) RequestAutoContextSelection(rootDir string, excludedPaths []string
 	}
 
 	// Execute LLM call
-	raw, apiCall, err := providerInstance.Generate(a.ctx, prompt)
+	requestCtx, cancel := context.WithTimeout(a.ctx, 2*time.Minute)
+	defer cancel()
+	raw, apiCall, err := providerInstance.Generate(requestCtx, prompt)
 
 	// Log to shared prompt history for diagnostics (Step 3 view).
 	if a.historyManager != nil {
@@ -600,7 +599,7 @@ func (a *App) generateShotgunOutputWithProgress(jobCtx context.Context, rootDir 
 					if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 						return err
 					}
-					fmt.Printf("Error processing subdirectory %s: %v\n", path, err)
+					runtime.LogWarningf(a.ctx, "Error processing a subdirectory: %v", err)
 				}
 			} else {
 				select { // Check before heavy I/O
@@ -610,7 +609,7 @@ func (a *App) generateShotgunOutputWithProgress(jobCtx context.Context, rootDir 
 				}
 				content, err := os.ReadFile(path)
 				if err != nil {
-					fmt.Printf("Error reading file %s: %v\n", path, err)
+					runtime.LogWarningf(a.ctx, "Error reading a selected file: %v", err)
 					content = []byte(fmt.Sprintf("Error reading file: %v", err))
 				}
 
@@ -1024,6 +1023,9 @@ func (a *App) loadSettings() {
 			runtime.LogErrorf(a.ctx, "Error reading settings file %s: %v. Using default custom ignore rules (embedded).", a.configPath, err)
 		}
 	} else {
+		if chmodErr := restrictPrivateFile(a.configPath); chmodErr != nil {
+			runtime.LogWarningf(a.ctx, "Failed to restrict settings file permissions: %v", chmodErr)
+		}
 		err = json.Unmarshal(data, &a.settings)
 		if err != nil {
 			runtime.LogErrorf(a.ctx, "Error unmarshalling settings from %s: %v. Using default custom ignore rules (embedded).", a.configPath, err)
@@ -1063,13 +1065,7 @@ func (a *App) saveSettings() error {
 		return err
 	}
 
-	configDir := filepath.Dir(a.configPath)
-	if err := os.MkdirAll(configDir, os.ModePerm); err != nil {
-		runtime.LogErrorf(a.ctx, "Error creating config directory %s: %v", configDir, err)
-		return err
-	}
-
-	err = os.WriteFile(a.configPath, data, 0644)
+	err = writePrivateFileAtomically(a.configPath, data)
 	if err != nil {
 		runtime.LogErrorf(a.ctx, "Error writing settings to %s: %v", a.configPath, err)
 		return err

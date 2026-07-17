@@ -2,7 +2,7 @@
   <div class="flex flex-col w-full">
     <div v-if="showHeader && (label || tokensLabel)" class="flex items-center justify-between mb-1">
       <label v-if="label" class="block text-sm font-medium text-gray-700">{{ label }}</label>
-      <span :class="['text-xs font-medium', tokenCountColorClass]" v-if="tokensLabel">~{{ tokensLabel }} tokens</span>
+      <span :class="['text-xs font-medium', tokenCountColorClass]" v-if="tokensLabel">~{{ tokensLabel }} токенов</span>
     </div>
 
     <div
@@ -20,10 +20,10 @@
     <div v-if="showFooter && hasContent" class="flex items-center justify-between mt-2">
       <p class="text-xs" :class="isTruncated ? 'text-amber-600' : 'text-gray-500'">
         <template v-if="isTruncated">
-          Showing ~{{ previewTokensLabel }} tokens ({{ displayedCharactersLabel }}) out of ~{{ tokensLabel }} tokens ({{ totalCharactersLabel }})
+          Показано ~{{ previewTokensLabel }} токенов ({{ displayedCharactersLabel }}) из ~{{ tokensLabel }} токенов ({{ totalCharactersLabel }})
         </template>
         <template v-else>
-          ~{{ tokensLabel }} tokens ({{ totalCharactersLabel }})
+          ~{{ tokensLabel }} токенов ({{ totalCharactersLabel }})
         </template>
       </p>
       <button
@@ -57,7 +57,7 @@ const props = defineProps({
   },
   placeholder: {
     type: String,
-    default: 'Content preview will appear here.'
+    default: 'Здесь появится предварительный просмотр.'
   },
   platform: {
     type: String,
@@ -77,7 +77,7 @@ const props = defineProps({
   },
   copyButtonLabel: {
     type: String,
-    default: 'Copy Full Content'
+    default: 'Копировать всё'
   },
   showHeader: {
     type: Boolean,
@@ -122,8 +122,8 @@ const previewTokensLabel = computed(() => {
   const tokens = Math.round(displayedCharacters.value / 3);
   return tokens.toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ");
 });
-const displayedCharactersLabel = computed(() => `${displayedCharacters.value.toLocaleString()} chars`);
-const totalCharactersLabel = computed(() => `${totalCharacters.value.toLocaleString()} chars`);
+const displayedCharactersLabel = computed(() => `${displayedCharacters.value.toLocaleString()} знаков`);
+const totalCharactersLabel = computed(() => `${totalCharacters.value.toLocaleString()} знаков`);
 
 async function copyFullContent() {
   if (!props.content) return;
@@ -135,7 +135,7 @@ async function copyFullContent() {
     } else {
       await navigator.clipboard.writeText(props.content);
     }
-    copyButtonText.value = 'Copied!';
+    copyButtonText.value = 'Скопировано';
     emit('copied');
     resetCopyLabelLater();
     return;
@@ -146,11 +146,11 @@ async function copyFullContent() {
   // Fallback to Wails clipboard API
   try {
     await WailsClipboardSetText(props.content);
-    copyButtonText.value = 'Copied!';
+    copyButtonText.value = 'Скопировано';
     emit('copied');
   } catch (err) {
     console.error('Fallback clipboard copy also failed:', err);
-    copyButtonText.value = 'Failed!';
+    copyButtonText.value = 'Ошибка';
   } finally {
     resetCopyLabelLater();
   }

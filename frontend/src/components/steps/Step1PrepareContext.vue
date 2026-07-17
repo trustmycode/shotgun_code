@@ -2,7 +2,7 @@
   <div class="p-4 h-full flex flex-col">
     <!-- State 1: No Project Selected -->
     <p v-if="!projectRoot" class="text-xs text-gray-500 mt-2 flex-grow flex justify-center items-center">
-      Select a project folder to begin.
+      Выберите каталог проекта, чтобы начать.
     </p>
 
     <!-- State 2: Project Selected (Always visible container) -->
@@ -10,11 +10,11 @@
       <!-- TOP BLOCK: User Task Input (Never disappears now) -->
       <div>
         <div class="flex items-center justify-between mb-1">
-          <label for="user-task-ai-step1" class="block text-sm font-medium text-gray-700">Your task for AI:</label>
+          <label for="user-task-ai-step1" class="block text-sm font-medium text-gray-700">Задача для модели:</label>
           <div class="flex items-center space-x-4">
             <div
               class="flex items-center space-x-2 text-xs text-gray-600"
-              title="Repo scan is attached to your context extraction prompt to better understand the repository structure and extract the right context."
+              title="Описание репозитория помогает модели понять структуру и выбрать подходящий контекст."
             >
               <label class="flex items-center space-x-1 cursor-pointer hover:text-gray-900">
                 <input
@@ -22,7 +22,7 @@
                   v-model="includeRepoScan"
                   class="h-3.5 w-3.5 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
                 />
-                <span>Use repo scan:</span>
+                <span>Добавить описание:</span>
                 <span class="font-mono bg-gray-100 px-1 rounded text-gray-500">{{ repoScanTokensLabel }}</span>
               </label>
               <button
@@ -30,7 +30,7 @@
                 class="text-blue-600 hover:underline"
                 @click="openRepoScanEditor"
               >
-                edit
+                изменить
               </button>
             </div>
             <div class="h-4 w-px bg-gray-300"></div>
@@ -43,7 +43,7 @@
                 @click="handleAutoContextClick"
               >
                 <span>
-                  {{ props.isAutoContextLoading ? 'Auto selecting…' : 'Auto context' }}
+                  {{ props.isAutoContextLoading ? 'Выбор файлов…' : 'Выбрать автоматически' }}
                 </span>
               </button>
               <button
@@ -52,7 +52,7 @@
                 data-testid="setup-api-key-link"
                 @click="emit('open-llm-settings')"
               >
-                Setup model
+                Настроить модель
               </button>
             </div>
           </div>
@@ -62,14 +62,14 @@
           v-model="localUserTask"
           rows="6"
           class="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 text-sm"
-          placeholder="Describe what the AI should do..."
+          placeholder="Опишите задачу для модели…"
         ></textarea>
       </div>
 
       <!-- BOTTOM BLOCK: Generated Context (Switches between Loading/Content) -->
       <div class="flex-grow flex flex-col min-h-0">
         <div class="flex items-center justify-between mb-1">
-          <h3 class="text-sm font-semibold text-gray-700">Generated Project Context:</h3>
+          <h3 class="text-sm font-semibold text-gray-700">Сформированный контекст проекта:</h3>
 
           <!-- Hide controls while loading to prevent interaction -->
           <div
@@ -77,7 +77,7 @@
             class="flex items-center space-x-3 text-xs"
           >
             <span :class="['font-medium', generatedContextTokensColorClass]">
-              ~{{ generatedContextTokensLabel }} tokens
+              ~{{ generatedContextTokensLabel }} токенов
             </span>
             <button
               @click="copyGeneratedContextToClipboard"
@@ -97,7 +97,7 @@
           >
             <div class="text-center">
               <div class="w-64 mx-auto">
-                <p class="text-gray-600 mb-1 text-sm">Generating project context...</p>
+                <p class="text-gray-600 mb-1 text-sm">Формирование контекста проекта…</p>
                 <div class="w-full bg-gray-200 rounded-full h-2.5 dark:bg-gray-700">
                   <div
                     class="bg-blue-600 h-2.5 rounded-full transition-all duration-300 ease-out"
@@ -106,7 +106,7 @@
                 </div>
                 <p class="text-gray-500 mt-1 text-xs">
                   {{ generationProgress.current }} /
-                  {{ generationProgress.total > 0 ? generationProgress.total : 'calculating...' }} items
+                  {{ generationProgress.total > 0 ? generationProgress.total : 'подсчёт…' }} элементов
                 </p>
               </div>
             </div>
@@ -117,7 +117,7 @@
             v-else-if="generatedContext && generatedContext.startsWith('Error:')"
             class="text-red-500 p-3 bg-red-50 flex-grow flex flex-col justify-center items-center h-full"
           >
-            <h4 class="font-semibold mb-1">Error Generating Context:</h4>
+            <h4 class="font-semibold mb-1">Не удалось сформировать контекст:</h4>
             <pre
               class="text-xs whitespace-pre-wrap text-left w-full bg-white p-2 border border-red-200 rounded max-h-60 overflow-auto"
             >{{ generatedContext.substring(6).trim() }}</pre>
@@ -130,8 +130,8 @@
             :content="generatedContext"
             label=""
             :platform="props.platform"
-            placeholder="Context will appear here."
-            copy-button-label="Copy All"
+            placeholder="Здесь появится контекст."
+            copy-button-label="Копировать всё"
             min-height="100%"
             :max-display-length="10000"
             :show-copy-button="false"
@@ -142,9 +142,9 @@
           <!-- 4. Empty/Initial State -->
           <div v-else class="flex-grow flex justify-center items-center bg-gray-50 h-full">
             <p class="text-xs text-gray-500 px-4 text-center">
-              Project context will be generated automatically.
+              Контекст проекта будет сформирован автоматически.
               <br />
-              If empty after generation, ensure files are selected and not all excluded.
+              Если результат пуст, убедитесь, что выбраны файлы и не всё исключено правилами.
             </p>
           </div>
 
@@ -154,7 +154,7 @@
             class="bg-gray-50 p-1 border-t border-gray-200"
           >
             <p class="text-xs text-gray-500 text-center">
-              Preview is truncated for performance. Use Copy All to grab the full text.
+              Предварительный просмотр сокращён для производительности. Кнопка копирования берёт полный текст.
             </p>
           </div>
         </div>
@@ -222,7 +222,7 @@ const progressBarWidth = computed(() => {
   return '0%';
 });
 
-const copyButtonText = ref('Copy All');
+const copyButtonText = ref('Копировать всё');
 const localUserTask = ref(props.userTask);
 let userTaskInputDebounceTimer = null;
 
@@ -233,9 +233,9 @@ const isRepoScanModalVisible = ref(false);
 
 const repoScanTokensLabel = computed(() => {
   if (repoScanTokenCount.value === 0) {
-    return 'empty';
+    return 'пусто';
   }
-  return `${repoScanTokenCount.value} tokens`;
+  return `${repoScanTokenCount.value} токенов`;
 });
 
 const generatedContextCharCount = computed(() => {
@@ -350,7 +350,7 @@ async function copyGeneratedContextToClipboard() {
   // Use navigator.clipboard.writeText as primary (WailsClipboardSetText has UTF-8 encoding issues with box-drawing chars on darwin)
   try {
     await navigator.clipboard.writeText(props.generatedContext);
-    copyButtonText.value = 'Copied!';
+    copyButtonText.value = 'Скопировано';
     resetContextCopyLabel();
     return;
   } catch (err) {
@@ -360,10 +360,10 @@ async function copyGeneratedContextToClipboard() {
   // Fallback to Wails clipboard API
   try {
     await WailsClipboardSetText(props.generatedContext);
-    copyButtonText.value = 'Copied!';
+    copyButtonText.value = 'Скопировано';
   } catch (fallbackErr) {
     console.error('Fallback clipboard copy also failed for context:', fallbackErr);
-    copyButtonText.value = 'Failed!';
+    copyButtonText.value = 'Ошибка';
   } finally {
     resetContextCopyLabel();
   }
@@ -371,7 +371,7 @@ async function copyGeneratedContextToClipboard() {
 
 function resetContextCopyLabel() {
   setTimeout(() => {
-    copyButtonText.value = 'Copy All';
+    copyButtonText.value = 'Копировать всё';
   }, 2000);
 }
 
@@ -414,5 +414,4 @@ async function handleSaveRepoScan(content) {
   }
 }
 </script>
-
 

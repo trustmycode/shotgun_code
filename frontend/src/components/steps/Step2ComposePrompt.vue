@@ -3,7 +3,7 @@
     <CustomRulesModal
       :is-visible="isPromptRulesModalVisible"
       :initial-rules="currentPromptRulesForModal"
-      title="Edit Custom Prompt Rules"
+      title="Изменение дополнительных правил"
       ruleType="prompt"
       @save="handleSavePromptRules"
       @cancel="handleCancelPromptRules"
@@ -17,10 +17,10 @@
           :class="executeButtonClass"
           :disabled="!hasExecutePrerequisites"
           @click="handleExecutePrompt"
-          title="Execute prompt with configured LLM"
+          title="Отправить инструкцию настроенной модели"
         >
           <span>
-            {{ isExecuting ? "Executing..." : "Execute Prompt" }}
+            {{ isExecuting ? "Выполнение…" : "Выполнить запрос" }}
           </span>
         </button>
         <button
@@ -28,7 +28,7 @@
           type="button"
           @click="emit('open-llm-settings')"
         >
-          Setup model
+          Настроить модель
         </button>
       </div>
     </div>
@@ -45,24 +45,24 @@
           <label
             for="user-task-ai"
             class="block text-sm font-medium text-gray-700 mb-1"
-            >Your task for AI:</label
+            >Задача для модели:</label
           >
           <textarea
             id="user-task-ai"
             v-model="localUserTask"
             rows="15"
             class="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 text-sm"
-            placeholder="Describe what the AI should do..."
+            placeholder="Опишите задачу для модели…"
           ></textarea>
           <div class="mt-2 flex flex-wrap items-center gap-3">
             <div class="flex items-center space-x-2">
               <label class="text-sm font-medium text-gray-700"
-                >Prompt role:</label
+                >Роль:</label
               >
               <select
                 v-model="selectedPromptTemplateKey"
                 class="p-1 border border-gray-300 rounded-md text-xs focus:ring-blue-500 focus:border-blue-500"
-                title="Select prompt template"
+                title="Выберите шаблон инструкции"
               >
                 <option
                   v-for="(template, key) in promptTemplates"
@@ -78,7 +78,7 @@
               :title="tooltipText"
             >
               <span :class="['font-medium', charCountColorClass]"
-                >~{{ approximateTokens }} tokens</span
+                >~{{ approximateTokens }} токенов</span
               >
             </div>
             <button
@@ -93,7 +93,7 @@
               @click="toggleFinalPromptVisibility"
               class="px-3 py-1 bg-gray-200 text-gray-700 text-xs font-semibold rounded-md hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-opacity-50"
             >
-              {{ isFinalPromptCollapsed ? "Show" : "Hide" }}
+              {{ isFinalPromptCollapsed ? "Показать" : "Скрыть" }}
             </button>
           </div>
         </div>
@@ -103,10 +103,10 @@
             for="rules-content"
             class="block text-sm font-medium text-gray-700 mb-1 flex items-center"
           >
-            Custom rules:
+            Дополнительные правила:
             <button
               @click="openPromptRulesModal"
-              title="Edit custom prompt rules"
+              title="Изменить дополнительные правила"
               class="ml-2 p-0.5 hover:bg-gray-200 rounded text-xs"
             >
               ⚙️
@@ -118,18 +118,18 @@
             @input="(e) => emit('update:rulesContent', e.target.value)"
             rows="8"
             class="w-full p-2 border border-gray-300 rounded-md shadow-sm bg-gray-100 text-sm font-mono"
-            placeholder="Rules for AI..."
+            placeholder="Дополнительные правила для модели…"
           ></textarea>
         </div>
 
         <LargeTextViewer
-          label="Files to include:"
+          label="Добавляемые файлы:"
           :content="props.fileListContext"
-          placeholder="File list from Step 1 (Prepare Context) will appear here..."
+          placeholder="Здесь появится список файлов с первого этапа…"
           :platform="props.platform"
           min-height="200px"
           :max-display-length="10000"
-          copy-button-label="Copy All"
+          copy-button-label="Копировать всё"
         />
       </div>
 
@@ -140,7 +140,7 @@
         <div class="flex items-center justify-between gap-2 mb-2 flex-shrink-0">
           <div class="flex items-center gap-2 min-w-0">
             <h3 class="text-md font-medium text-gray-700 whitespace-nowrap">
-              Prompt:
+              Итоговая инструкция:
             </h3>
             <!-- Small Loading Indicator next to title instead of destroying content -->
             <div
@@ -150,7 +150,7 @@
             <select
               v-model="selectedPromptTemplateKey"
               class="p-1 border border-gray-300 rounded-md text-xs focus:ring-blue-500 focus:border-blue-500 flex-shrink-0"
-              title="Select prompt template"
+              title="Выберите шаблон инструкции"
             >
               <option
                 v-for="(template, key) in promptTemplates"
@@ -183,8 +183,8 @@
             <LargeTextViewer
               class="flex-grow h-full"
               :content="props.finalPrompt"
-              label="Generated prompt preview"
-              placeholder="The final prompt will be generated here..."
+              label="Предварительный просмотр"
+              placeholder="Здесь появится итоговая инструкция…"
               :platform="props.platform"
               min-height="0px"
               max-height="100%"
@@ -192,8 +192,7 @@
               :show-copy-button="false"
             />
             <p class="text-xs text-gray-500 mt-1">
-              Preview is truncated for performance. Use Copy All to grab the
-              full text.
+              Предварительный просмотр сокращён для производительности. Кнопка копирования берёт полный текст.
             </p>
           </div>
         </div>
@@ -209,7 +208,7 @@
         class="bg-white rounded-lg p-6 w-[90%] h-[90%] flex flex-col shadow-xl"
       >
         <div class="flex justify-between items-center mb-4">
-          <h3 class="text-lg font-semibold">LLM Response</h3>
+          <h3 class="text-lg font-semibold">Ответ модели</h3>
           <button
             @click="closeResponseModal"
             class="text-gray-500 hover:text-gray-700 text-2xl"
@@ -233,7 +232,7 @@
             @click="closeResponseModal"
             class="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300 transition-colors"
           >
-            Close
+            Закрыть
           </button>
         </div>
       </div>
@@ -297,12 +296,12 @@ const emit = defineEmits([
 ]);
 
 const promptTemplates = {
-  architect: { name: "Architect", content: architectTemplateContentFromFile },
-  findBug: { name: "Test", content: findBugTemplateContentFromFile },
-  dev: { name: "Dev", content: devTemplateContentFromFile },
+  architect: { name: "Архитектор", content: architectTemplateContentFromFile },
+  findBug: { name: "Поиск ошибок", content: findBugTemplateContentFromFile },
+  dev: { name: "Разработчик", content: devTemplateContentFromFile },
   // architect duplicate removed
   projectManager: {
-    name: "Project: Update Tasks",
+    name: "Обновление задач проекта",
     content: projectManagerTemplateContentFromFile,
   },
 };
@@ -310,7 +309,7 @@ const promptTemplates = {
 const selectedPromptTemplateKey = ref("architect"); // Default template
 
 const isLoadingFinalPrompt = ref(false);
-const copyButtonText = ref("Copy All");
+const copyButtonText = ref("Копировать всё");
 
 let finalPromptDebounceTimer = null;
 let userTaskInputDebounceTimer = null;
@@ -323,7 +322,7 @@ const currentPromptRulesForModal = ref("");
 const isResponseModalVisible = ref(false);
 const currentResponse = ref("");
 const isExecuting = ref(false);
-const copyResponseButtonText = ref("Copy Response");
+const copyResponseButtonText = ref("Копировать ответ");
 
 const isFirstMount = ref(true);
 const isFinalPromptCollapsed = ref(false);
@@ -353,7 +352,7 @@ const executeButtonClass = computed(() => {
   return "auto-context-button--enabled";
 });
 
-const DEFAULT_RULES = `no additional rules`;
+const DEFAULT_RULES = `без дополнительных правил`;
 
 onMounted(async () => {
   try {
@@ -394,12 +393,12 @@ async function updateFinalPrompt() {
     let populatedPrompt = currentTemplateContent;
     populatedPrompt = populatedPrompt.replace(
       "{TASK}",
-      props.userTask || "No task provided by the user.",
+      props.userTask || "Пользователь не указал задачу.",
     );
     populatedPrompt = populatedPrompt.replace("{RULES}", props.rulesContent);
     populatedPrompt = populatedPrompt.replace(
       "{FILE_STRUCTURE}",
-      props.fileListContext || "No file structure context provided.",
+      props.fileListContext || "Контекст структуры файлов отсутствует.",
     );
 
     // Insert current date in YYYY-MM-DD format
@@ -470,7 +469,7 @@ async function copyFinalPromptToClipboard() {
   // Use navigator.clipboard.writeText as primary (WailsClipboardSetText has UTF-8 encoding issues with box-drawing chars on darwin)
   try {
     await navigator.clipboard.writeText(props.finalPrompt);
-    copyButtonText.value = "Copied!";
+    copyButtonText.value = "Скопировано";
     resetCopyButtonLabel();
     return;
   } catch (err) {
@@ -480,13 +479,13 @@ async function copyFinalPromptToClipboard() {
   // Fallback to Wails clipboard API
   try {
     await WailsClipboardSetText(props.finalPrompt);
-    copyButtonText.value = "Copied!";
+    copyButtonText.value = "Скопировано";
   } catch (fallbackErr) {
     console.error(
       "Fallback copy attempt for final prompt also failed: ",
       fallbackErr,
     );
-    copyButtonText.value = "Failed!";
+    copyButtonText.value = "Ошибка";
   } finally {
     resetCopyButtonLabel();
   }
@@ -494,7 +493,7 @@ async function copyFinalPromptToClipboard() {
 
 function resetCopyButtonLabel() {
   setTimeout(() => {
-    copyButtonText.value = "Copy All";
+    copyButtonText.value = "Копировать всё";
   }, 2000);
 }
 
@@ -554,7 +553,7 @@ async function handleExecutePrompt() {
     console.error("Error executing prompt:", err);
     LogErrorRuntime(`Error executing prompt: ${err.message || err}`);
     // Optionally show error in a toast or the modal
-    currentResponse.value = `Error: ${err.message || err}`;
+    currentResponse.value = `Ошибка: ${err.message || err}`;
     isResponseModalVisible.value = true;
   } finally {
     isExecuting.value = false;
@@ -570,15 +569,15 @@ async function copyResponse() {
   if (!currentResponse.value) return;
   try {
     await navigator.clipboard.writeText(currentResponse.value);
-    copyResponseButtonText.value = "Copied!";
+    copyResponseButtonText.value = "Скопировано";
     setTimeout(() => {
-      copyResponseButtonText.value = "Copy Response";
+      copyResponseButtonText.value = "Копировать ответ";
     }, 2000);
   } catch (err) {
     console.error("Failed to copy response:", err);
-    copyResponseButtonText.value = "Failed!";
+    copyResponseButtonText.value = "Ошибка";
     setTimeout(() => {
-      copyResponseButtonText.value = "Copy Response";
+      copyResponseButtonText.value = "Копировать ответ";
     }, 2000);
   }
 }

@@ -1,4 +1,4 @@
-name: Cross-platform Build + Release — Shotgun Code
+name: Сборка и выпуск Shotgun Code
 
 on:
   workflow_dispatch:
@@ -40,35 +40,34 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-      - name: Checkout code
+      - name: Получение исходного кода
         uses: actions/checkout@v4
         with:
           submodules: recursive
 
-      - name: Setup Go
+      - name: Настройка Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.23'
+          go-version: '1.24.x'
           check-latest: true
 
-      - name: Setup Node.js
+      - name: Настройка Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
 
-      # FIX: Pin Wails to v2.10.2 to match your go.mod
-      - name: Install Wails CLI
-        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.10.2
+      - name: Установка Wails
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.11.0
 
       # OPTIMIZATION: --no-install-recommends speeds up install
-      - name: Install Linux dependencies
+      - name: Установка библиотек Linux
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends libgtk-3-dev libwebkit2gtk-4.1-dev
 
       # FIX: Added '-tags webkit2_41' specifically for Linux/Ubuntu 24.04
-      - name: Build Wails App
+      - name: Сборка приложения
         shell: bash
         run: |
           if [ "${{ runner.os }}" == "Linux" ]; then
@@ -80,13 +79,13 @@ jobs:
           fi
 
       # Fix for macOS "App is damaged" error
-      - name: Package macOS Application
+      - name: Упаковка приложения macOS
         if: runner.os == 'macOS'
         run: |
           cd build/bin
           ditto -c -k --sequesterRsrc --keepParent shotgun-code.app ../../shotgun-code-darwin-arm64.zip
 
-      - name: Upload Artifact
+      - name: Сохранение результата сборки
         uses: actions/upload-artifact@v4
         with:
           name: shotgun_code-${{ matrix.platform == 'darwin/arm64' && 'darwin-arm64' || (matrix.platform == 'windows/amd64' && 'windows-amd64' || 'linux-amd64') }}
@@ -99,21 +98,21 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Download artifacts
+      - name: Получение результатов сборки
         uses: actions/download-artifact@v4
         with:
           pattern: shotgun_code-*
           path: release-assets
           merge-multiple: true
 
-      - name: Prepare Release Info
+      - name: Подготовка выпуска
         id: prep
         run: |
           TAG="v$(date -u '+%Y.%m.%d')-${GITHUB_SHA::7}"
           echo "tag_name=$TAG" >> $GITHUB_OUTPUT
           echo "release_name=Shotgun Code $TAG" >> $GITHUB_OUTPUT
 
-      - name: Create GitHub Release
+      - name: Создание выпуска GitHub
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.prep.outputs.tag_name }}

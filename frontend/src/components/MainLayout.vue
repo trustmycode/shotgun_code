@@ -40,7 +40,7 @@
     <div 
       @mousedown="startResize"
       class="w-full h-2 bg-gray-300 hover:bg-gray-400 cursor-row-resize select-none"
-      title="Resize console height"
+      title="Изменить высоту журнала"
     >
     </div>
     <BottomConsole :log-messages="logMessages" :height="consoleHeight" ref="bottomConsoleRef" />
@@ -77,9 +77,9 @@ import { EventsOn, Environment } from '../../wailsjs/runtime/runtime';
 
 const currentStep = ref(1);
 const steps = ref([
-  { id: 1, title: 'Prepare Context', completed: false, description: 'Select project folder, review files, and generate the initial project context for the LLM.' },
-  { id: 2, title: 'Compose Prompt', completed: false, description: 'Provide a prompt to the LLM based on the project context to generate a code diff.' },
-  { id: 3, title: 'Prompt History', completed: false, description: 'Review previously executed prompts and responses.', alwaysAccessible: true },
+  { id: 1, title: 'Подготовка контекста', completed: false, description: 'Выберите каталог проекта, проверьте файлы и сформируйте контекст для модели.' },
+  { id: 2, title: 'Составление инструкции', completed: false, description: 'Сформулируйте задачу на основе контекста проекта и получите предлагаемые изменения.' },
+  { id: 3, title: 'История запросов', completed: false, description: 'Просмотрите ранее выполненные запросы и ответы.', alwaysAccessible: true },
 ]);
 
 const logMessages = ref([]);
