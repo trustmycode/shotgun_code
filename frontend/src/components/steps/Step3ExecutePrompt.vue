@@ -3,10 +3,10 @@
     <!-- Sidebar: History List -->
     <div class="w-72 bg-gray-50 border-r border-gray-200 flex flex-col flex-shrink-0">
       <div class="p-3 border-b border-gray-200 flex justify-between items-center bg-gray-100">
-        <h3 class="font-semibold text-gray-700 text-sm">Prompt History</h3>
+        <h3 class="font-semibold text-gray-700 text-sm">История запросов</h3>
         <button 
             @click="loadHistory" 
-            title="Refresh History"
+            title="Обновить историю"
             class="text-gray-500 hover:text-blue-600 transition-colors"
         >
             ↻
@@ -14,11 +14,11 @@
       </div>
       
       <div v-if="isLoading" class="p-4 text-center text-gray-500 text-xs">
-        Loading...
+        Загрузка…
       </div>
       
       <div v-else-if="historyItems.length === 0" class="p-4 text-center text-gray-500 text-xs">
-        No history yet. Execute a prompt in Step 2.
+        История пуста. Выполните запрос на втором этапе.
       </div>
 
       <div v-else class="overflow-y-auto flex-1">
@@ -31,7 +31,7 @@
             :class="{'bg-blue-50 border-l-4 border-l-blue-500': selectedItem && selectedItem.id === item.id, 'border-l-4 border-l-transparent': !selectedItem || selectedItem.id !== item.id}"
           >
             <div class="text-sm font-medium text-gray-800 truncate mb-1" :title="item.userTask">
-                {{ item.userTask || 'No task description' }}
+                {{ item.userTask || 'Описание задачи отсутствует' }}
             </div>
             <div class="text-xs text-gray-500 flex justify-between">
                 <span>{{ formatTime(item.timestamp) }}</span>
@@ -42,7 +42,7 @@
       </div>
       
       <div class="p-2 border-t border-gray-200 bg-gray-100 text-center">
-         <button @click="clearHistory" class="text-xs text-red-500 hover:text-red-700">Clear History</button>
+         <button @click="clearHistory" class="text-xs text-red-500 hover:text-red-700">Очистить историю</button>
       </div>
     </div>
 
@@ -52,7 +52,7 @@
              <!-- Request Pane -->
              <div class="w-1/2 flex flex-col border-r border-gray-200">
                  <div class="p-2 border-b border-gray-200 flex justify-between items-center bg-gray-50">
-                     <span class="font-bold text-gray-700 text-xs uppercase tracking-wider">Raw Request</span>
+                     <span class="font-bold text-gray-700 text-xs uppercase tracking-wider">Исходный запрос</span>
                      <div class="flex items-center space-x-2">
                        <button @click="copyText(selectedItem.constructedPrompt, 'req')" class="text-xs text-blue-600 hover:text-blue-800 font-medium">
                           {{ copyReqBtnText }}
@@ -62,7 +62,7 @@
                          @click="openApiCallModal"
                          class="text-xs text-gray-500 hover:text-gray-800 underline"
                        >
-                         view api call
+                         сведения о вызове
                        </button>
                      </div>
                  </div>
@@ -78,7 +78,7 @@
              <!-- Response Pane -->
              <div class="w-1/2 flex flex-col">
                  <div class="p-2 border-b border-gray-200 flex justify-between items-center bg-gray-50">
-                     <span class="font-bold text-gray-700 text-xs uppercase tracking-wider">Response</span>
+                     <span class="font-bold text-gray-700 text-xs uppercase tracking-wider">Ответ</span>
                      <div class="flex items-center space-x-3">
                         <button @click="copyText(selectedItem.response, 'res')" class="text-xs text-blue-600 hover:text-blue-800 font-medium">
                             {{ copyResBtnText }}
@@ -99,7 +99,7 @@
     <!-- Empty State -->
     <div v-else class="flex-1 flex flex-col items-center justify-center text-gray-400 bg-gray-50">
         <div class="text-4xl mb-2">🗂️</div>
-        <p>Select an item from history to view details</p>
+        <p>Выберите запись истории для просмотра</p>
     </div>
     
     <!-- API Call Debug Modal -->
@@ -109,7 +109,7 @@
     >
       <div class="bg-white rounded-lg shadow-xl w-[90%] h-[90%] flex flex-col">
         <div class="flex items-center justify-between px-4 py-2 border-b border-gray-200">
-          <h3 class="text-sm font-semibold text-gray-800">LLM API Call</h3>
+          <h3 class="text-sm font-semibold text-gray-800">Сведения о вызове модели</h3>
           <button
             @click="closeApiCallModal"
             class="text-gray-500 hover:text-gray-800 text-xl leading-none"
@@ -133,7 +133,7 @@
             @click="closeApiCallModal"
             class="text-xs text-gray-600 hover:text-gray-900"
           >
-            Close
+            Закрыть
           </button>
         </div>
       </div>
@@ -150,12 +150,12 @@ const historyItems = ref([]);
 const selectedItem = ref(null);
 const isLoading = ref(false);
 
-const copyReqBtnText = ref('Copy All');
-const copyResBtnText = ref('Copy All');
+const copyReqBtnText = ref('Копировать всё');
+const copyResBtnText = ref('Копировать всё');
 
 const isApiCallModalVisible = ref(false);
 const currentApiCall = ref('');
-const copyApiCallBtnText = ref('Copy All');
+const copyApiCallBtnText = ref('Копировать всё');
 
 onMounted(() => {
     loadHistory();
@@ -182,7 +182,7 @@ async function loadHistory() {
 }
 
 async function clearHistory() {
-    if (!confirm("Are you sure you want to clear the prompt history?")) return;
+    if (!confirm("Очистить всю историю запросов?")) return;
     try {
         await ClearPromptHistory();
         historyItems.value = [];
@@ -212,11 +212,11 @@ async function copyText(text, type) {
     try {
         await navigator.clipboard.writeText(text);
         if (type === 'req') {
-            copyReqBtnText.value = 'Copied!';
-            setTimeout(() => copyReqBtnText.value = 'Copy All', 2000);
+            copyReqBtnText.value = 'Скопировано';
+            setTimeout(() => copyReqBtnText.value = 'Копировать всё', 2000);
         } else {
-            copyResBtnText.value = 'Copied!';
-            setTimeout(() => copyResBtnText.value = 'Copy All', 2000);
+            copyResBtnText.value = 'Скопировано';
+            setTimeout(() => copyResBtnText.value = 'Копировать всё', 2000);
         }
     } catch (err) {
         console.error('Copy failed:', err);
@@ -239,8 +239,8 @@ async function copyApiCall() {
     if (!currentApiCall.value) return;
     try {
         await navigator.clipboard.writeText(currentApiCall.value);
-        copyApiCallBtnText.value = 'Copied!';
-        setTimeout(() => copyApiCallBtnText.value = 'Copy All', 2000);
+        copyApiCallBtnText.value = 'Скопировано';
+        setTimeout(() => copyApiCallBtnText.value = 'Копировать всё', 2000);
     } catch (err) {
         console.error('Copy failed:', err);
     }

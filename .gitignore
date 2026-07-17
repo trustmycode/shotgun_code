@@ -9,6 +9,7 @@
 pkg/
 bin/
 vendor/
+/shotgun-code
 
 # Wails specific
 build/appicon.png
@@ -65,4 +66,4 @@ Show-DirectoryTree.ps1
 
 # If you have specific large files or data that shouldn't be in git
 # data/
-# assets_large/ 
+# assets_large/

@@ -1,156 +1,94 @@
-# Shotgun App
+# Shotgun Code
 
-![Shotgun App Banner](https://github.com/user-attachments/assets/6dd15389-4ad9-493a-a0e7-9813eb143e38)
+![Shotgun Code](https://github.com/user-attachments/assets/6dd15389-4ad9-493a-a0e7-9813eb143e38)
 
-**Tired of Cursor cutting off context, missing your files, and spitting out empty responses?**
+Shotgun Code — настольное приложение для выбора файлов проекта, сборки структурированного контекста и отправки задачи в OpenAI, Google Gemini или OpenRouter. Приложение также умеет попросить модель автоматически выбрать относящиеся к задаче файлы.
 
-**Shotgun** is the bridge between your local codebase and the world's most powerful LLMs.
-It doesn't just copy files; it **intelligently packages your project context** and can **execute prompts directly** against OpenAI (GPT-4o/GPT-5), Google Gemini, or OpenRouter.
+> Важно: это сопровождаемый форк проекта [glebkudr/shotgun_code](https://github.com/glebkudr/shotgun_code), а не заявление об авторстве исходного проекта. Подробности приведены в [`NOTICE.md`](NOTICE.md). Авторские уведомления и исходная лицензия сохранены.
 
-> **Stop copy-pasting 50 files manually.**
-> 1. Select your repo.
-> 2. Let AI pick the relevant files (Auto-Context).
-> 3. Blast the payload directly to the model or copy it for use in Cursor/Windsurf.
+## Возможности
 
----
+- рекурсивное дерево проекта с поддержкой `.gitignore` и пользовательских правил;
+- ручной и автоматический выбор файлов;
+- ограничение формируемого контекста десятью мегабайтами;
+- шаблоны задач и предварительный просмотр итоговой инструкции;
+- подключение OpenAI, Google Gemini и OpenRouter;
+- локальная история до 50 запросов и 20 МБ данных;
+- отмена устаревшей фоновой операции при запуске новой.
 
-## 1. What Shotgun Does
-Shotgun is a desktop power-tool that **explodes your project into a structured payload** designed for AI reasoning.
+## Стек
 
-It has evolved from a simple "context dumper" into a full-fledged **LLM Client for Codebases**:
-*   **Smart Selection:** Uses AI ("Auto-Context") to analyze your task and automatically select only the relevant files from your tree.
-*   **Direct Execution:** Configurable API integration with **OpenAI**, **Gemini**, and **OpenRouter**.
-*   **Prompt Engineering:** Built-in templates for different roles (Developer, Architect, Bug Hunter).
-*   **History & Audit:** Keeps a full log of every prompt sent and response received.
+- Go 1.24;
+- Wails 2.11;
+- Vue 3, Vite 5 и Tailwind CSS;
+- langchaingo для части подключений к поставщикам моделей.
 
----
+## Локальный запуск
 
-## 2. Key Features
+Требуются Go 1.24, Node.js 22 и Wails 2.11.0.
 
-### 🧠 AI-Powered Context
-*   **Auto-Context:** Don't know which files are needed for a bug fix? Type your task, and Shotgun uses an LLM to scan your tree and select the relevant files for you.
-*   **Repo Scan:** supplement context retrieval with a `shotgun_reposcan.md` summary of your architecture to give the LLM high-level awareness before diving into code.
-
-### ⚡ Workflow Speed
-*   **Fast Tree Scan:** Go + Wails backend scans thousands of files in milliseconds.
-*   **Interactive Tree:** Manually toggle files/folders or use `.gitignore` and custom rule sets to filter noise.
-*   **One-Click Blast:** Generate a massive context payload instantly.
-
-### 🔌 Direct Integrations
-*   **OpenAI:** Support for GPT-4o and experimental support for **GPT-5** family models.
-*   **Google Gemini:** Native integration for Gemini 2.5/3 Pro & Flash.
-*   **OpenRouter:** Access hundreds of LLM's via a unified API.
-
-### 🛠 Developer Experience
-*   **Prompt Templates:** Switch modes easily (e.g., "Find Bug" vs "Refactor" vs "Write Docs").
-*   **History Tracking:** Never lose a generated patch. Browse past prompts, responses, and raw API payloads.
-*   **Privacy Focused:** Your code goes only to the API provider you choose. No intermediate servers.
-
----
-
-## 3. The Workflow
-
-Shotgun guides you through a 3-step process:
-
-### Step 1: Prepare Context
-*   **Select Project:** Open your local repository.
-*   **Filter:** Use the checkbox tree, `.gitignore`, or the **Auto-Context** button to define the scope.
-*   **Repo Scan:** Edit or load the high-level repository summary for better AI grounding.
-*   **Result:** A structured XML-like dump of your selected codebase.
-
-### Step 2: Compose & Execute
-*   **Define Task:** Describe what you need (e.g., "Refactor the auth middleware to use JWT").
-*   **Select Template:** Choose a persona (Dev, Architect, QA).
-*   **Execute:** Click **"Execute Prompt"** to send it to the configured LLM API immediately, OR copy the full payload to your clipboard for use in external tools like ChatGPT or Cursor.
-
-### Step 3: History & Apply
-*   **Review:** View the AI's response alongside your original prompt.
-*   **Diffs:** The AI output is optimized for `diff` generation.
-*   **Audit:** Inspect raw API calls for debugging or token usage analysis.
-
----
-
-## 4. Installation
-
-### Prerequisites
-*   **Go ≥ 1.20**
-*   **Node.js LTS**
-*   **Wails CLI:** `go install github.com/wailsapp/wails/v2/cmd/wails@latest`
-
-### Clone & Build
 ```bash
-git clone https://github.com/glebkudr/shotgun_code
+git clone https://github.com/trustmycode/shotgun_code.git
 cd shotgun_code
-
-# Install frontend dependencies
-cd frontend
-npm install
-cd ..
-
-# Run in Development Mode (Hot Reload)
+go install github.com/wailsapp/wails/v2/cmd/wails@v2.11.0
 wails dev
+```
 
-# Build Production Binary
+Wails выполнит `npm ci` для интерфейса. Для отдельной проверки:
+
+```bash
+cd frontend
+npm ci
+npm run build
+cd ..
+go test -race ./...
+go vet ./...
+```
+
+Сборка выпуска:
+
+```bash
 wails build
 ```
-*Binaries will be located in `build/bin/`.*
 
----
+Результат появится в `build/bin/`.
 
-## 5. Configuration
+## Работа с моделями и данными
 
-### LLM Setup
-Click the **Settings** (gear icon) in the app to configure providers:
-1.  **Provider:** Select OpenAI, Gemini, or OpenRouter.
-2.  **API Key:** Paste your key (stored locally).
-3.  **Model:** Select your preferred model (e.g., `gpt-4o`, `gemini-2.5-pro`, `claude-3.5-sonnet`).
+1. Выберите каталог проекта и исключите лишние файлы.
+2. Проверьте формируемый контекст: он может содержать исходный код, настройки и другие чувствительные данные.
+3. В настройках укажите поставщика, модель и ключ доступа.
+4. Оставьте пользовательский базовый адрес пустым для официального адреса поставщика. Если указан другой адрес, ключ и выбранный исходный код будут отправлены именно на него.
+5. Выполните задачу или скопируйте итоговую инструкцию вручную.
 
-### Custom Rules
-You can define global excludes (like `node_modules`, `dist`, `.git`) and custom prompt instructions that are appended to every request.
+Ключи не передаются веб-интерфейсу после сохранения. Они и история хранятся локально в файлах с правами `0600`, но не шифруются. История может содержать полный текст выбранных файлов; очищайте её после работы с чувствительным проектом. Дополнительные рекомендации находятся в [`SECURITY.md`](SECURITY.md).
 
----
+## Проверки и выпуск
 
-## 6. Output Format
+Для каждого запроса на слияние GitHub Actions:
 
-Shotgun generates context optimized for LLM parsing:
+- собирает интерфейс с чистой установкой зависимостей;
+- запускает `go test -race ./...` и `go vet ./...`;
+- собирает приложение для Linux через Wails.
 
-```xml
-<file path="backend/main.go">
-package main
-...
-</file>
+Отдельный ручной процесс собирает выпуски для Linux, Windows и macOS. Публикация не запускается при обычной отправке изменений.
 
-<file path="frontend/src/App.vue">
-<template>
-...
-</template>
-</file>
-```
+## Архитектура
 
-This format allows models to understand file boundaries perfectly, enabling accurate multi-file refactoring suggestions.
+Основные границы:
 
----
+- [`main.go`](main.go) — запуск Wails;
+- [`app.go`](app.go) — файловое дерево, генерация контекста и координация;
+- [`auto_context_service.go`](auto_context_service.go) — автоматический выбор файлов;
+- [`llm_settings.go`](llm_settings.go) — настройки и безопасное представление ключей для интерфейса;
+- [`internal/llm/provider`](internal/llm/provider) — реализации поставщиков;
+- [`history_manager.go`](history_manager.go) — ограниченная локальная история;
+- [`frontend/src`](frontend/src) — интерфейс Vue.
 
-## 7. ⚖️ License & Usage
+Дополнительное описание находится в [`design/architecture.md`](design/architecture.md).
 
-My name is Gleb Curly, and I am an indie developer making software for a living.
+## Лицензия и происхождение
 
-Shotgun is developed and maintained by **Curly's Technology Tmi**. 
+Исходный код сопровождается не стандартной лицензией открытого исходного кода, а **Shotgun Community License Agreement 1.0**. В ней есть ограничения по годовой выручке, коммерческому использованию и созданию конкурирующего продукта; явное разрешение на публичное распространение сформулировано неочевидно. Полный и определяющий текст находится в [`LICENSE.md`](LICENSE.md).
 
-This project uses a **Community License** model:
-
-### 1. Free for Small Teams & Non-Commercial Use
-You can use Shotgun for free (including modification and internal use) if:
-- Your company/team generates **less than $1M USD** in annual revenue.
-- You do **not** use the code to build a competing public product.
-
-### 2. Commercial License (Enterprise)
-If your annual revenue exceeds **$1M USD**, you are required to purchase a commercial license with a pretty reasonable price.
-
-Please contact me at **glebkudr@gmail.com** for pricing.
-
-See [LICENSE.md](LICENSE.md) for the full legal text.
-
----
-
-*Shotgun – Load, Aim, Blast your code into the future.*
+Исходный правообладатель — Curly's Technology Tmi. Этот репозиторий сохраняет уведомления и явно обозначает происхождение форка в [`NOTICE.md`](NOTICE.md). Владелец форка должен отдельно подтвердить у правообладателя право публичной публикации; этот документ не является таким разрешением.

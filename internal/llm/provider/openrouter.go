@@ -41,6 +41,7 @@ func newOpenRouterProvider(cfg Config) (LLMProvider, error) {
 		openai.WithToken(strings.TrimSpace(cfg.APIKey)),
 		openai.WithModel(strings.TrimSpace(cfg.Model)),
 		openai.WithBaseURL(baseURL),
+		openai.WithHTTPClient(providerHTTPClient),
 	}
 
 	client, err := openai.New(opts...)
@@ -107,8 +108,8 @@ type openRouterTextConfig struct {
 }
 
 type openRouterChatRequest struct {
-	Model     string                   `json:"model"`
-	Messages  []openRouterChatMessage  `json:"messages"`
+	Model     string                    `json:"model"`
+	Messages  []openRouterChatMessage   `json:"messages"`
 	Reasoning openRouterReasoningConfig `json:"reasoning"`
 	Text      openRouterTextConfig      `json:"text"`
 }
@@ -186,7 +187,7 @@ func (o *openRouterProvider) generateViaOpenRouterAPI(ctx context.Context, promp
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := providerHTTPClient.Do(req)
 	if err != nil {
 		log.Printf("openrouter chat request failed (model=%s): %v", o.model, err)
 		return "", debugString, fmt.Errorf("openrouter chat request failed: %w", err)
@@ -194,13 +195,13 @@ func (o *openRouterProvider) generateViaOpenRouterAPI(ctx context.Context, promp
 	defer resp.Body.Close()
 
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		limitedBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		log.Printf("openrouter chat returned status %d for model %s: %s", resp.StatusCode, o.model, string(limitedBody))
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+		log.Printf("openrouter chat returned status %d for model %s", resp.StatusCode, o.model)
 		return "", debugString, fmt.Errorf("openrouter chat API returned non-2xx status %d", resp.StatusCode)
 	}
 
 	var decoded openRouterChatResponse
-	if err := json.NewDecoder(resp.Body).Decode(&decoded); err != nil {
+	if err := decodeLimitedJSON(resp.Body, &decoded); err != nil {
 		log.Printf("failed to decode openrouter chat payload for model %s: %v", o.model, err)
 		return "", debugString, fmt.Errorf("failed to decode openrouter chat payload: %w", err)
 	}

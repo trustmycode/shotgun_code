@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"net/url"
 	"strings"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
@@ -13,6 +14,17 @@ import (
 type cachedProvider struct {
 	cfg      provider.Config
 	instance provider.LLMProvider
+}
+
+// PublicLLMSettings is safe to expose to the web interface. API key values
+// deliberately never cross the backend boundary.
+type PublicLLMSettings struct {
+	ActiveProvider   string `json:"activeProvider"`
+	Model            string `json:"model"`
+	BaseURL          string `json:"baseURL"`
+	HasOpenAIKey     bool   `json:"hasOpenAIKey"`
+	HasOpenRouterKey bool   `json:"hasOpenRouterKey"`
+	HasGeminiKey     bool   `json:"hasGeminiKey"`
 }
 
 func normalizeProviderName(name string) string {
@@ -62,6 +74,10 @@ func (a *App) ensureLLMSettingsDefaults() {
 	settings.OpenAIKey = strings.TrimSpace(settings.OpenAIKey)
 	settings.OpenRouterKey = strings.TrimSpace(settings.OpenRouterKey)
 	settings.GeminiKey = strings.TrimSpace(settings.GeminiKey)
+	if err := validateBaseURL(settings.BaseURL); err != nil {
+		runtime.LogWarning(a.ctx, "Stored custom base URL is invalid; using the provider default.")
+		settings.BaseURL = ""
+	}
 
 	if settings.ActiveProvider != "" && settings.keyForProvider(settings.ActiveProvider) == "" {
 		runtime.LogWarning(a.ctx, "Active LLM provider is missing an API key; disabling auto-context.")
@@ -78,8 +94,16 @@ func (a *App) HasActiveLlmKey() bool {
 	return settings.ActiveProvider != "" && settings.keyForProvider(settings.ActiveProvider) != ""
 }
 
-func (a *App) GetLlmSettings() LLMSettings {
-	return a.settings.LLMSettings
+func (a *App) GetLlmSettings() PublicLLMSettings {
+	settings := a.settings.LLMSettings
+	return PublicLLMSettings{
+		ActiveProvider:   settings.ActiveProvider,
+		Model:            settings.Model,
+		BaseURL:          settings.BaseURL,
+		HasOpenAIKey:     settings.keyForProvider(LLMProviderOpenAI) != "",
+		HasOpenRouterKey: settings.keyForProvider(LLMProviderOpenRouter) != "",
+		HasGeminiKey:     settings.keyForProvider(LLMProviderGemini) != "",
+	}
 }
 
 func (a *App) SetLlmApiKey(providerName, apiKey string) error {
@@ -153,11 +177,38 @@ func (a *App) SetLlmModel(providerName, model string) error {
 }
 
 func (a *App) SetLlmBaseURL(baseURL string) error {
-	a.settings.LLMSettings.BaseURL = strings.TrimSpace(baseURL)
+	baseURL = strings.TrimSpace(baseURL)
+	if err := validateBaseURL(baseURL); err != nil {
+		return err
+	}
+	a.settings.LLMSettings.BaseURL = baseURL
 	if err := a.saveSettings(); err != nil {
 		return fmt.Errorf("failed to save base URL: %w", err)
 	}
 	a.invalidateProviderCache()
+	return nil
+}
+
+func validateBaseURL(baseURL string) error {
+	if baseURL == "" {
+		return nil
+	}
+	parsed, err := url.Parse(baseURL)
+	if err != nil {
+		return fmt.Errorf("invalid base URL: %w", err)
+	}
+	if parsed.Scheme != "https" {
+		return errors.New("custom base URL must use HTTPS")
+	}
+	if parsed.Host == "" || parsed.Hostname() == "" {
+		return errors.New("custom base URL must include a host")
+	}
+	if parsed.User != nil {
+		return errors.New("custom base URL must not contain credentials")
+	}
+	if parsed.RawQuery != "" || parsed.Fragment != "" {
+		return errors.New("custom base URL must not contain a query or fragment")
+	}
 	return nil
 }
 
@@ -170,6 +221,8 @@ func (a *App) ListLlmModels(providerName string) ([]provider.ModelInfo, error) {
 }
 
 func (a *App) invalidateProviderCache() {
+	a.llmCacheMu.Lock()
+	defer a.llmCacheMu.Unlock()
 	a.llmCache = cachedProvider{}
 }
 
@@ -177,6 +230,8 @@ func (a *App) getOrCreateProvider(cfg provider.Config) (provider.LLMProvider, er
 	if cfg.Provider == "" || cfg.APIKey == "" || cfg.Model == "" {
 		return nil, errors.New("incomplete provider configuration")
 	}
+	a.llmCacheMu.Lock()
+	defer a.llmCacheMu.Unlock()
 	if a.llmCache.instance != nil && a.llmCache.cfg == cfg {
 		return a.llmCache.instance, nil
 	}
